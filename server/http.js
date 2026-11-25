@@ -6,7 +6,7 @@ const GAME = /^[a-z0-9-]{1,40}$/;
 export function createTickets(lifeMs) {
   const all = new Map();
   return {
-    add: (ticket, key) => all.set(ticket, { key, until: Date.now() + lifeMs, isBusy: false, isDone: false }),
+    add: (ticket, key) => all.set(ticket, { key, until: Date.now() + lifeMs, pending: null, outcome: null }),
     get: (ticket) => { const t = all.get(ticket); return t && t.until > Date.now() ? t : null; },
     sweep: () => { const now = Date.now(); for (const [id, t] of all) if (t.until <= now) all.delete(id); },
   };
@@ -29,19 +29,24 @@ async function readBody(req) {
 async function takeResult({ req, res, url, from, limits, tickets, leaderboard }) {
   const id = url.searchParams.get('ticket') ?? '', ticket = tickets.get(id);
   if (++from.results > limits.resultsPerMinute) return reply(res, 429, { error: 'too_many' });
-  if (!ticket || ticket.isDone) return reply(res, 404, { error: 'unknown_ticket' });
-  if (ticket.isBusy || leaderboard.isFull()) return reply(res, 503, { error: 'busy' });
-  ticket.isBusy = true;
+  if (!ticket) return reply(res, 404, { error: 'unknown_ticket' });
+  // Both players send the same match, often at the same moment. The first is judged; both hear the outcome.
+  await ticket.pending;
+  if (ticket.outcome) return reply(res, 200, ticket.outcome);
+  if (ticket.pending || leaderboard.isFull()) return reply(res, 503, { error: 'busy' });
+  let done;
+  ticket.pending = new Promise((r) => { done = r; });
   try {
     const text = await readBody(req);
     if (text === null) return reply(res, 413, { error: 'too_large' });
     let transcript;
     try { transcript = JSON.parse(text); } catch { return reply(res, 400, { error: 'bad_request' }); }
     const out = await leaderboard.submit({ transcript, ticket: id, key: ticket.key });
-    if (out.ok && out.finished) ticket.isDone = true;
+    if (out.ok && out.finished) ticket.outcome = out;
     return reply(res, out.ok ? 200 : 422, out);
   } finally {
-    ticket.isBusy = false;
+    ticket.pending = null;
+    done();
   }
 }
 export function answerHttp(context) {

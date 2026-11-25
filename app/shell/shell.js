@@ -178,7 +178,7 @@ async function report(mine, transcript) {
     if (current !== mine || !out.finished) return;
     const points = out.counted ? out.points?.[mine.seat] : undefined;
     if (points !== undefined) $('status').textContent += ` ${points >= 0 ? '+' : '\u2212'}${Math.abs(points)} points.`;
-    else if (!out.counted) $('status').textContent += ' It is on the leaderboard, or you two have played enough ranked matches for today.';
+    else if (!out.counted) $('status').textContent += ' You two have played enough ranked matches for today, so it adds no points.';
   } catch { if (current === mine) $('status').textContent += ' The leaderboard could not be reached.'; }
 }
 function finish(mine, result, seat, transcript) {

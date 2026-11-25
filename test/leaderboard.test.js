@@ -102,10 +102,20 @@ test('a result travels to the leaderboard over HTTP, and everybody can read it',
     const ticket = await ticketFrom(s.port), transcript = await played({ identities: await two(), ticket });
     const send = () => fetch(`${url}/result?ticket=${ticket}`, { method: 'POST', body: JSON.stringify(transcript) });
     assert.deepEqual(await (await send()).json(), { ok: true, finished: true, counted: true, points: [-16, 16] });
-    assert.equal((await send()).status, 404);
+    const again = await Promise.all([send(), send()]);
+    for (const r of again) assert.deepEqual(await r.json(), { ok: true, finished: true, counted: true, points: [-16, 16] });
     const { players } = await (await fetch(`${url}/leaderboard?game=shikaku`)).json();
     assert.deepEqual(players.map((p) => p.name), ['Bob', 'Ann']);
     assert.equal((await fetch(`${url}/health`)).status, 200);
+  });
+});
+test('when both players send their match at once, both hear the outcome and it counts once', async () => {
+  const leaderboard = board();
+  await withServer({ leaderboard, limits: { rankSameAddress: true } }, async (s, url) => {
+    const ticket = await ticketFrom(s.port), transcript = await played({ identities: await two(), ticket });
+    const both = await Promise.all([1, 2].map(() => fetch(`${url}/result?ticket=${ticket}`, { method: 'POST', body: JSON.stringify(transcript) }).then((r) => r.json())));
+    assert.deepEqual(both.map((x) => x.points), [[-16, 16], [-16, 16]]);
+    assert.equal(leaderboard.top('shikaku')[0].wins, 1);
   });
 });
 test('bad requests are refused and cost little', async () => {

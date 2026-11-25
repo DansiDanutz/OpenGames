@@ -44,7 +44,7 @@ function ringShape(half, radius, hole, holeRadius) {
   shape.holes.push(trace(new T.Path(), hole, holeRadius));
   return shape;
 }
-export const gloss = (color, more = {}) => new T.MeshPhysicalMaterial({ color, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.1, ...more });
+export const gloss = (color, more = {}) => new T.MeshPhysicalMaterial({ color, roughness: 0.34, clearcoat: 0.8, clearcoatRoughness: 0.18, envMapIntensity: 0.9, ...more });
 
 function drop(node) {
   node.traverse((x) => {
@@ -57,6 +57,7 @@ function drop(node) {
 export function createBoard(element, { frame = '#d9a441', floor = '#171028', tilt = TILT } = {}) {
   const renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.toneMapping = T.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.92;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = T.PCFShadowMap;
   Object.assign(renderer.domElement.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block', pointerEvents: 'none' });
@@ -67,17 +68,17 @@ export function createBoard(element, { frame = '#d9a441', floor = '#171028', til
   scene.background = backdrop();
   const room = new T.RoomEnvironment(), pmrem = new T.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(room, 0.03).texture;
-  scene.environmentIntensity = 0.55;
+  scene.environmentIntensity = 0.3;
   pmrem.dispose();
-  scene.add(world, new T.HemisphereLight('#cdbcff', '#1a1030', 0.5));
+  scene.add(world, new T.HemisphereLight('#cdbcff', '#1a1030', 0.3));
   world.add(pieces);
-  const sun = new T.DirectionalLight('#fff3df', 2.4), rim = new T.DirectionalLight('#8a6bff', 0.9);
+  const sun = new T.DirectionalLight('#fff3df', 1.9), rim = new T.DirectionalLight('#8a6bff', 1.1);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 5; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
   scene.add(sun, rim);
 
   const target = new T.WebGLRenderTarget(2, 2, { type: T.HalfFloatType, samples: 4 }), composer = new T.EffectComposer(renderer, target);
-  const bloom = new T.UnrealBloomPass(new T.Vector2(2, 2), 0.32, 0.5, 1);
+  const bloom = new T.UnrealBloomPass(new T.Vector2(2, 2), 0.28, 0.45, 1.05);
   composer.addPass(new T.RenderPass(scene, camera)); composer.addPass(bloom); composer.addPass(new T.OutputPass());
 
   let n = 0, tray = null, dirty = true, last = 0, slow = 0, ratio = Math.min(2, devicePixelRatio), shakeFor = 0, isGone = false;
@@ -93,6 +94,7 @@ export function createBoard(element, { frame = '#d9a441', floor = '#171028', til
     renderer.setSize(w, h, false); composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    let lift = 0;
     const half = n / 2 + FRAME, corners = [-1, 1].flatMap((x) => [-1, 1].flatMap((z) => [0, 0.5].map((y) => new T.Vector3(x * half, y, z * half))));
     const isInside = (d) => {
       camera.position.set(0, Math.cos(tilt) * d, Math.sin(tilt) * d);
@@ -100,9 +102,20 @@ export function createBoard(element, { frame = '#d9a441', floor = '#171028', til
       camera.updateMatrixWorld();
       return corners.every((v) => { const p = v.clone().project(camera); return Math.abs(p.x) < 0.97 && Math.abs(p.y) < 0.97; });
     };
-    let near = 2, far = 160;
-    for (let i = 0; i < 24; i++) { const mid = (near + far) / 2; if (isInside(mid)) far = mid; else near = mid; }
-    isInside(far);
+    const closest = () => {
+      let near = 2, far = 160;
+      for (let i = 0; i < 24; i++) { const mid = (near + far) / 2; if (isInside(mid)) far = mid; else near = mid; }
+      isInside(far);
+    };
+    // The near edge looks larger than the far one, so the picture is moved until both margins are equal.
+    camera.clearViewOffset();
+    for (let i = 0; i < 4; i++) {
+      closest();
+      const ys = corners.map((v) => v.clone().project(camera).y), off = (Math.max(...ys) + Math.min(...ys)) / 2;
+      lift += off * 0.5;
+      camera.setViewOffset(w, h, 0, -lift * h, w, h);
+    }
+    closest();
     home.copy(camera.position);
     redraw();
   }
@@ -113,7 +126,7 @@ export function createBoard(element, { frame = '#d9a441', floor = '#171028', til
     if (tray) drop(tray);
     tray = new T.Group();
     const half = n / 2, ring = new T.Mesh(new T.ExtrudeGeometry(ringShape(half + 0.42, 0.5, half + 0.06, 0.16), { depth: 0.3, bevelEnabled: true, bevelSize: 0.09, bevelThickness: 0.09, bevelSegments: 5, curveSegments: 16 }),
-      new T.MeshPhysicalMaterial({ color: frame, metalness: 1, roughness: 0.24, clearcoat: 0.6, clearcoatRoughness: 0.2 }));
+      new T.MeshPhysicalMaterial({ color: frame, metalness: 1, roughness: 0.34, clearcoat: 0.5, clearcoatRoughness: 0.3 }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = -0.22;
     ring.castShadow = ring.receiveShadow = true;
     const base = new T.Mesh(new T.BoxGeometry(n + 0.3, 0.2, n + 0.3), new T.MeshPhysicalMaterial({ color: floor, roughness: 0.5, metalness: 0.2 }));
@@ -149,7 +162,7 @@ export function createBoard(element, { frame = '#d9a441', floor = '#171028', til
   /* A flat outline around cells, for the pointer and the keyboard. */
   function outline({ r0, c0, r1, c1 }, color, y = 0.32) {
     const w = (c1 - c0 + 1) / 2 - 0.03, d = (r1 - r0 + 1) / 2 - 0.03, t = 0.07, group = new T.Group();
-    const material = new T.MeshBasicMaterial({ color: new T.Color(color).multiplyScalar(1.5), toneMapped: false });
+    const material = new T.MeshBasicMaterial({ color, toneMapped: false });
     for (const [x, z, sx, sz] of [[0, -d, 2 * w, t], [0, d, 2 * w, t], [-w, 0, t, 2 * d], [w, 0, t, 2 * d]]) {
       const bar = new T.Mesh(new T.BoxGeometry(sx, t * 0.6, sz), material);
       bar.position.set(x, 0, z);

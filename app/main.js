@@ -144,7 +144,7 @@ shellCall('game:send', ({ token, msg } = {}) => { if (gameView && token === game
 ipcMain.on('game:message', (event, text) => { if (fromGame(event)) fromGameText(text); });
 
 function createWindow() {
-  win = new BrowserWindow({ width: 1080, height: 800, minWidth: 360, minHeight: 560, show: false, icon: path.join(ROOT, 'build/icon.png'), backgroundColor: '#100a20', title: 'OpenGames',
+  win = new BrowserWindow({ width: 1080, height: 800, minWidth: 360, minHeight: 560, show: false, icon: path.join(ROOT, 'packaging/icon.png'), backgroundColor: '#100a20', title: 'OpenGames',
     webPreferences: { ...safePage, preload: path.join(import.meta.dirname, 'shell-preload.cjs') } });
   lockPage(win.webContents);
   win.once('ready-to-show', () => (process.env.OPENGAMES_QUIET ? win.showInactive() : win.show()));

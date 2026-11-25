@@ -23,7 +23,7 @@ const GEM = {
   2: () => { const m = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.42, 3), gem('#63c800')); return m; },
   3: () => { const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.27), gem('#9a35ff')); m.scale.y = 1.25; return m; },
 };
-const gem = (color) => new THREE.MeshPhysicalMaterial({ color, emissive: color, emissiveIntensity: 0.28, roughness: 0.05, metalness: 0.05, clearcoat: 1, iridescence: 0.7, iridescenceIOR: 1.6, flatShading: true, envMapIntensity: 1.8 });
+const gem = (color) => new THREE.MeshPhysicalMaterial({ color, emissive: color, emissiveIntensity: 0.12, roughness: 0.04, metalness: 0.1, clearcoat: 1, iridescence: 0.35, iridescenceIOR: 1.6, flatShading: true, envMapIntensity: 2.4 });
 function pattern(player) {
   const c = Object.assign(document.createElement('canvas'), { width: 64, height: 64 }), g = c.getContext('2d');
   g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 64);
