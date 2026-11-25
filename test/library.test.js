@@ -14,8 +14,8 @@ const copyGame = (t) => {
   t.after(() => fs.rmSync(path.dirname(dir), { recursive: true }));
   return dir;
 };
-test('the library lists Shikaku and leaves broken games out', (t) => {
-  assert.deepEqual(readLibrary(path.join(ROOT, 'games'), KIT).map((g) => g.id), ['shikaku']);
+test('the library lists every game and leaves broken games out', (t) => {
+  assert.deepEqual(readLibrary(path.join(ROOT, 'games'), KIT).map((g) => g.id), ['avioane', 'gemhold', 'shikaku']);
   const dir = copyGame(t);
   t.mock.method(console, 'error', () => {});
   fs.writeFileSync(path.join(dir, 'game.json'), '{}');

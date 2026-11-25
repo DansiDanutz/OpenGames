@@ -11,8 +11,8 @@
     "server": "node server/main.js",
     "demo": "node tools/demo.js",
     "test": "node --test --test-timeout=10000 test/*.test.js",
-    "test:app": "node test/app.e2e.js",
-    "check": "node kit/check.js games/shikaku"
+    "test:app": "node test/app.e2e.js && node test/games.e2e.js",
+    "check": "node kit/check.js games/shikaku && node kit/check.js games/gemhold && node kit/check.js games/avioane"
   },
   "dependencies": { "ws": "^8.18.0" },
   "devDependencies": { "electron": "45.4.1", "playwright-core": "^1.50.0" },

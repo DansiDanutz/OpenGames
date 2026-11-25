@@ -1,0 +1,13 @@
+{
+  "id": "avioane",
+  "name": "Avioane & Bărcuțe",
+  "version": "1.0.0",
+  "author": "DansiDanutz",
+  "license": "MIT",
+  "summary": "The old paper game. Hide two planes and three boats, then find the other player's first.",
+  "players": { "min": 2, "max": 2 },
+  "minutes": 10,
+  "page": "index.html",
+  "icon": "icon.svg",
+  "rules": "rules.js"
+}

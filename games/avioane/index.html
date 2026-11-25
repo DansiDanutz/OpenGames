@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Avioane &amp; Bărcuțe</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="place">
+<p id="whose">Hide your fleet</p>
+<div class="boards">
+  <section class="big" id="their"><h2>Other player</h2>
+    <div class="frame"><div class="board" id="theirs" role="application" tabindex="0" aria-label="The other player's board. Move with the arrow keys and press Space to shoot."></div></div>
+    <ul class="left" id="left" aria-label="Their fleet"></ul></section>
+  <section class="small"><h2 id="mineTitle">Your fleet</h2>
+    <div class="frame"><div class="board" id="mine" role="application" tabindex="0" aria-label="Your board. Press N for the next piece, the arrow keys to move it and R to turn it."></div></div></section>
+</div>
+<div class="tools" id="tools"><button id="mix" type="button">Shuffle</button><button id="turn" type="button">Turn</button><button id="go" type="button">Ready</button></div>
+<p id="say" role="status"></p>
+<script type="module" src="page.js"></script>
+</body>
+</html>

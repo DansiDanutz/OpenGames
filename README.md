@@ -2,7 +2,7 @@
 
 **No more middleman.** Open-source games for two players, who connect straight to each other.
 
-Status: first working version, run from source. It has one game (Shikaku), no installer and no public match server yet. There are no accounts and no payments. Nothing of value can be won.
+Status: first working version, run from source. It has three games (Shikaku, Gemhold, and Avioane & Bărcuțe), no installer and no public match server yet. There are no accounts and no payments. Nothing of value can be won.
 
 ## Try it
 ```sh
@@ -29,7 +29,7 @@ Treat the other player's name as untrusted text: use `textContent`, never `inner
 A game page has no network, files, camera or other permissions. Its only way out is the message port in `kit/ui.js`.
 
 ## Known limits
-- **Hidden cards:** both computers know the whole position, so a cheater can look at secret hands. Only games without secrets are safe so far.
+- **Hidden cards:** both computers know the whole position, so a cheater can look at secret hands. A game can avoid this as Avioane & Bărcuțe does: each fleet stays on its own computer under a seal and is checked at the end. A player who will not answer or show the fleet can only end the match without a result.
 - **Computer help:** a program can solve a puzzle for a player. That is one reason nothing of value can be won.
 - **The host** (the player who waited) puts moves in order, so it has a small advantage when both finish at almost the same moment, and it can ignore the other player's moves. Neither computer can prove that.
 - **Leaving:** a lost connection does not count for anybody, so a losing player can quit. A player who sees the start of a match and dislikes it can quit too.
@@ -42,4 +42,4 @@ A game page has no network, files, camera or other permissions. Its only way out
 `pnpm test` (engine, match, server, library), `pnpm test:app` (two real windows), `pnpm check`.
 
 ## Licenses
-The app and server: AGPL-3.0. The game kit (`kit/`) and Shikaku: MIT.
+The app and server: AGPL-3.0. The game kit (`kit/`) and the three games: MIT.
