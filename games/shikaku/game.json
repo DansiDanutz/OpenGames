@@ -1,7 +1,7 @@
 {
   "id": "shikaku",
   "name": "Shikaku",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "author": "DansiDanutz",
   "license": "MIT",
   "summary": "Split the grid into rectangles. Each holds one number: its size. First to finish wins.",
