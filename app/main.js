@@ -134,7 +134,7 @@ async function openLink({ id, kind } = {}) {
   asking = true;
   try {
     const { response } = await dialog.showMessageBox(win, { type: 'question', buttons: ['Open in browser', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
-      message: `Open ${new URL(url).hostname}?`, detail: `${url}\n\nThis page does not belong to OpenGames. ${kind === 'support' ? `Payments there go to the creator of ${game.name}.` : `${game.sponsor.name} pays the creator of ${game.name} for this line.`}` });
+      message: `Open ${new URL(url).hostname}?`, detail: `${url}\n\nThis page does not belong to OpenGames. ${kind === 'support' ? `${game.author} named it as the support page for ${game.name}.` : `${game.author} named it as a sponsor of ${game.name}.`}` });
     if (response !== 0) return false;
     await shell.openExternal(url);
     return true;

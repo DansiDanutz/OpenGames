@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { readCreator } from '../app/creator.js';
-import { hashGame, readLibrary } from '../app/library.js';
+import { hashGame, readLibrary, readManifest } from '../app/library.js';
 import { checkGame } from '../kit/check.js';
 
 const ROOT = path.join(import.meta.dirname, '..'), KIT = path.join(ROOT, 'kit');
@@ -30,7 +30,7 @@ test('every other address is refused', () => {
   for (const url of urls) assert.throws(() => read({ sponsor: { ...sponsor, url } }), /sponsor must/, String(url));
 });
 test('text that hides or turns around is refused, and so is anything unknown', () => {
-  for (const text of ['', ' a', 'a\nb', 'a\u202eb', 'a\u200bb', 'x'.repeat(81), 5]) assert.throws(() => read({ sponsor: { ...sponsor, text } }), /sponsor must/, JSON.stringify(text));
+  for (const text of ['', ' a', 'a\nb', 'a\u202eb', 'a\u200bb', '\u2800', '\u3164', 'a\u3000b', 'a\u00a0b', 'x'.repeat(81), 5]) assert.throws(() => read({ sponsor: { ...sponsor, text } }), /sponsor must/, JSON.stringify(text));
   for (const name of ['', 'x'.repeat(41), undefined]) assert.throws(() => read({ sponsor: { ...sponsor, name } }), /sponsor must/);
   for (const v of [[], 'null', '5', { html: 'x' }, { sponsor: { ...sponsor, script: 'x' } }, { sponsor: null }]) assert.throws(() => read(v));
   for (const v of ['{', `{"support":"${'x'.repeat(3000)}"}`]) assert.throws(() => read(v));
@@ -52,4 +52,11 @@ test('bad lines keep a game out of the check and the library', (t) => {
   assert.throws(() => checkGame(dir), /support must/);
   t.mock.method(console, 'error', () => {});
   assert.deepEqual(readLibrary(path.dirname(dir), KIT), []);
+});
+test('the name and the author of a game are one visible line, because the app repeats them in its own dialog', (t) => {
+  for (const key of ['name', 'author']) for (const value of ['A\nOpenGames checked this', 'a\u202eb', '\u2800', ' a']) {
+    const dir = copyGame(t), file = path.join(dir, 'game.json');
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), [key]: value }));
+    assert.throws(() => readManifest(dir), /one line/, JSON.stringify(value));
+  }
 });

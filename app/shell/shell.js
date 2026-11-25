@@ -38,7 +38,7 @@ const played = (r, where) => (r.wins + r.losses + r.draws ? `You won ${r.wins} a
 function creatorLines(game) {
   const open = (kind) => () => desk.openLink(game.id, kind).catch(() => notice('The browser did not open.'));
   return [
-    ...(game.support ? [el('button', { type: 'button', className: 'link', textContent: 'Support the creator', onclick: open('support') })] : []),
+    ...(game.support ? [el('button', { type: 'button', className: 'link', textContent: 'Support the creator', ariaLabel: `Support the creator of ${game.name}`, onclick: open('support') })] : []),
     ...(game.sponsor ? [el('p', { className: 'sponsor' }, el('span', { textContent: 'Sponsor' }),
       el('button', { type: 'button', className: 'link', textContent: `${game.sponsor.name}: ${game.sponsor.text}`, onclick: open('sponsor') }))] : []),
   ];

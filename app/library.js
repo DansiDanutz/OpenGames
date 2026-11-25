@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { CREATOR_FILE, readCreator } from './creator.js';
+import { CREATOR_FILE, isLine, readCreator } from './creator.js';
 
 export const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg' };
@@ -45,9 +45,9 @@ export function readManifest(dir) {
   const text = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
   const problems = [
     [/^[a-z0-9-]{1,40}$/.test(m.id ?? ''), 'id must be lower-case letters, numbers and dashes'],
-    [text(m.name, 40), 'name is missing or longer than 40 characters'],
+    [isLine(m.name, 40), 'name must be one line of 1 to 40 characters'],
     [/^\d+\.\d+\.\d+$/.test(m.version ?? ''), 'version must look like 1.0.0'],
-    [text(m.author, 60), 'author is missing'],
+    [isLine(m.author, 60), 'author must be one line of 1 to 60 characters'],
     [text(m.license, 40), 'license is missing'],
     [text(m.summary, 160), 'summary is missing or longer than 160 characters'],
     [m.players?.min === 2 && m.players?.max === 2, 'every game must be for two players'],

@@ -9,8 +9,9 @@ const MAX_URL = 200, MAX_BYTES = 2048, KEYS = ['support', 'sponsor'], SPONSOR_KE
 
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const onlyHas = (v, keys) => Object.keys(v).every((k) => keys.includes(k));
-/* One line, without characters that are invisible or turn the text around. */
-const isLine = (v, max) => typeof v === 'string' && v.trim() === v && v.length > 0 && v.length <= max && !/[\p{C}\p{Zl}\p{Zp}]/u.test(v);
+/* One line, without characters that are invisible or turn the text around. The only space is the plain one. */
+const HIDDEN = /[\p{C}\p{Default_Ignorable_Code_Point}\u2800]|(?! )\p{Z}/u;
+export const isLine = (v, max) => typeof v === 'string' && v.trim() === v && v.length > 0 && v.length <= max && !HIDDEN.test(v);
 /* A plain web address with a name of plain letters, so that what is shown is where it goes. */
 function webAddress(v) {
   if (typeof v !== 'string' || v.length > MAX_URL || !/^https:\/\/[\x21-\x7e]+$/.test(v) || !URL.canParse(v)) return null;
