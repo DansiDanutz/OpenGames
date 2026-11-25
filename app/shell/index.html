@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenGames</title>
+<link rel="stylesheet" href="shell.css">
+</head>
+<body data-screen="library">
+<header class="top">
+  <p class="mark">Open<b>Games</b></p>
+  <form id="nameForm" class="name"><label for="name">Your name</label><input id="name" maxlength="24" autocomplete="off" spellcheck="false"></form>
+</header>
+
+<main id="library">
+  <section class="lead">
+    <h1>No more middleman.</h1>
+    <p>You and the other player connect to each other. A small server only introduces you, and carries your moves when a direct connection is not possible.</p>
+    <svg class="thread" viewBox="0 0 600 90" aria-hidden="true"><path d="M30 45C170-25 270 115 350 45S500 5 570 45"/><circle class="p0" cx="30" cy="45" r="18"/><circle class="p1" cx="570" cy="45" r="18"/></svg>
+  </section>
+  <section aria-labelledby="gamesTitle">
+    <h2 id="gamesTitle">Games</h2>
+    <ul id="games" class="games"></ul>
+  </section>
+  <section class="prefs">
+    <label class="check"><input type="checkbox" id="hide"> Hide my internet address from other players</label>
+    <p>A direct connection shows your address to the person you play. With this on, your moves go through the server instead.</p>
+  </section>
+</main>
+
+<main id="wait" hidden>
+  <h1 id="waitTitle" tabindex="-1"></h1>
+  <p id="waitText"></p>
+  <p id="code" class="code" hidden></p>
+  <button id="cancel" type="button">Cancel</button>
+</main>
+
+<main id="match" hidden>
+  <div class="bar">
+    <p class="player p0"><span id="p0"></span></p>
+    <p class="between"><span id="mode"></span></p>
+    <p class="player p1"><span id="p1"></span></p>
+  </div>
+  <div class="status"><p id="status" role="status"></p><button id="leave" type="button">Give up</button></div>
+  <div id="stage"></div>
+</main>
+<div id="notice" role="alert"></div>
+<script type="module" src="shell.js"></script>
+</body>
+</html>

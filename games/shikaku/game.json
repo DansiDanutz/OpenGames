@@ -1,0 +1,12 @@
+{
+  "id": "shikaku",
+  "name": "Shikaku",
+  "version": "1.0.0",
+  "author": "DansiDanutz",
+  "license": "MIT",
+  "summary": "Split the grid into rectangles. Each holds one number: its size. First to finish wins.",
+  "players": { "min": 2, "max": 2 },
+  "minutes": 3,
+  "page": "index.html",
+  "rules": "rules.js"
+}
