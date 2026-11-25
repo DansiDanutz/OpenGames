@@ -11,12 +11,12 @@ const randomHex = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (
 /* One match with the game's own bot, on two engines that only share moves. */
 export function playMatch(rules, seed, options = {}) {
   const sides = [0, 1].map(() => new Match(rules, { seed, players: 2, options }));
-  const chance = createRandom(randomHex());
+  const chance = createRandom(randomHex()), own = [0, 1].map(() => ({ options, notes: {} }));
   if (sides[0].fingerprint() !== sides[1].fingerprint()) throw new Error('two computers start with different positions');
   for (let n = 0; n < MAX_MOVES; n++) {
     let moved = false;
     for (const player of chance() < 0.5 ? [0, 1] : [1, 0]) {
-      const move = rules.bot(sides[player].view(player), player, chance);
+      const move = rules.bot(sides[player].view(player), player, chance, own[player]);
       if (move === null || move === undefined) continue;        // not this player's turn
       const out = sides.map((m) => m.play(player, move));
       if (!out[0].ok) throw new Error(`the bot made a move the rules refuse: ${out[0].error}`);

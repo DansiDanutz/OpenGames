@@ -100,15 +100,17 @@ export function result(state) {
   const lead = crowns[0] - crowns[1] || total[0] - total[1] || ground[0] - ground[1] || -1;
   return { winner: lead > 0 ? 0 : 1, reason: 'full' };
 }
-/* Takes gems, then ground that leaves it more places and the other player fewer. */
-export function bot(state, player, random) {
+/* Takes gems, then ground that leaves it more places and the other player fewer. On an easy board it is careless. */
+const CARELESS = { easy: 9, hard: 1 };
+export function bot(state, player, random, own) {
   if (state.turn !== player) return null;
+  const careless = CARELESS[own?.options?.level] ?? CARELESS.hard;
   let best = null, most = -Infinity;
   for (const rect of choices(state, player)) {
     const covered = cells(state.n, rect), owner = state.owner.map((o, i) => (covered.includes(i) ? player : o));
     const held = score({ gems: state.gems, owner });
     const open = (p) => owner.filter((o, i) => o === -1 && sides(state.n, i).some((j) => owner[j] === p)).length;
-    const value = held.crowns[player] * 3 - held.crowns[1 - player] * 3 + held.total[player] * 2 + covered.length * 0.4 + open(player) * 0.5 - open(1 - player) * 0.6 + random();
+    const value = held.crowns[player] * 3 - held.crowns[1 - player] * 3 + held.total[player] * 2 + covered.length * 0.4 + open(player) * 0.5 - open(1 - player) * 0.6 + random() * careless;
     if (value > most) { most = value; best = rect; }
   }
   return best && { type: 'place', rect: best };

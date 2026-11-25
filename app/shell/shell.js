@@ -1,7 +1,8 @@
 import { Session, cleanName } from './session.js';
+import { Solo } from './solo.js';
 import { createTable } from './table.js';
 import { meet, link } from './wire.js';
-import { settings, identity, record, addResult, lastTerms, saveTerms } from './store.js';
+import { settings, identity, record, soloKey, addResult, lastTerms, saveTerms } from './store.js';
 import { describe, drawChoices, readChoices, drawTerms, drawLeaderboard } from './rules.js';
 
 const $ = (id) => document.getElementById(id);
@@ -26,20 +27,22 @@ function notice(text) {
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => { $('notice').textContent = ''; }, 7000);
 }
+const played = (r, where) => (r.wins + r.losses + r.draws ? `You won ${r.wins} and lost ${r.losses} ${where}.` : '');
 function drawLibrary() {
   $('games').replaceChildren(...library.map((game) => {
-    const r = record(game.id);
+    const history = [played(record(game.id), 'on this computer'), played(record(soloKey(game.id)), 'against the computer')].filter(Boolean).join(' ');
     const code = el('input', { placeholder: 'Code', maxLength: 8, autocomplete: 'off', spellcheck: false });
     code.setAttribute('aria-label', `Match code for ${game.name}`);
     const join = el('form', { className: 'join', onsubmit: (e) => { e.preventDefault(); if (code.value.trim()) begin(game, { t: 'join', code: code.value.trim() }); } },
       code, el('button', { textContent: 'Join' }));
     return el('li', {}, el('img', { className: 'art', src: `/icons/${game.id}`, alt: '' }),
       el('div', {}, el('h3', { textContent: game.name }), el('p', { textContent: game.summary }),
-        el('p', { className: 'facts', textContent: `2 players, about ${game.minutes} min. By ${game.author}, ${game.license} license.` }),
-        el('p', { className: 'facts', textContent: r.wins + r.losses + r.draws ? `You won ${r.wins} and lost ${r.losses} on this computer.` : 'Not played yet.' })),
+        el('p', { className: 'facts', textContent: `1 or 2 players, about ${game.minutes} min. By ${game.author}, ${game.license} license.` }),
+        el('p', { className: 'facts', textContent: history || 'Not played yet.' })),
       el('div', { className: 'actions' },
         el('button', { className: 'go', type: 'button', textContent: 'Find a player', onclick: () => choose(game, { t: 'find' }) }),
-        el('button', { type: 'button', textContent: 'Invite a friend', onclick: () => choose(game, { t: 'create' }) }), join,
+        el('button', { type: 'button', textContent: 'Invite a friend', onclick: () => choose(game, { t: 'create' }) }),
+        el('button', { type: 'button', textContent: 'Play alone', onclick: () => choose(game, { t: 'solo' }) }), join,
         el('button', { type: 'button', textContent: 'Leaderboard', onclick: () => showLeaderboard(game) })));
   }));
 }
@@ -63,12 +66,18 @@ function leave(text) {
 }
 /* The one who starts a match chooses the rules. Somebody who joins only sees them. */
 let choosing = null;
+const SETUP = {
+  find: { text: 'Choose the rules. If somebody else is already waiting, you see their rules and can accept them or leave.', go: 'Find a player' },
+  create: { text: 'Choose the rules. Your friend sees them before the match.', go: 'Get a code' },
+  solo: { text: 'Choose the rules. You play against the computer, also without internet. It adds no points to the leaderboard.', go: 'Play' },
+};
 function choose(game, ask) {
   if (current) return;
   choosing = { game, ask };
   $('setupTitle').textContent = game.name;
-  $('setupText').textContent = ask.t === 'find' ? 'Choose the rules. If somebody else is already waiting, you see their rules and can accept them or leave.' : 'Choose the rules. Your friend sees them before the match.';
-  $('setupGo').textContent = ask.t === 'find' ? 'Find a player' : 'Get a code';
+  $('setupText').textContent = SETUP[ask.t].text;
+  $('setupGo').textContent = SETUP[ask.t].go;
+  $('rankedPart').hidden = ask.t === 'solo';
   const last = lastTerms(game.id);
   drawChoices($('choices'), game, last);
   $('ranked').checked = last.ranked !== false;
@@ -81,7 +90,7 @@ $('setupForm').onsubmit = (e) => {
   const { game, ask } = choosing, terms = { ...readChoices($('choices')), ranked: $('ranked').checked };
   choosing = null;
   saveTerms(game.id, terms);
-  begin(game, ask, terms);
+  if (ask.t === 'solo') playAlone(game, terms); else begin(game, ask, terms);
 };
 $('setupBack').onclick = () => { choosing = null; screen('library'); };
 
@@ -132,42 +141,63 @@ async function begin(game, ask, terms = {}) {
     paired: (met) => { if (still()) play(mine, met, still).catch((error) => { if (still()) leave(error.message); }); },
   } });
 }
+/* Opens the game's page and waits until it answers. False when the player left in the meantime. */
+async function openTable(mine, mode, still) {
+  mine.token = crypto.randomUUID();                    // messages of an earlier game are ignored
+  mine.table = createTable({ send: (msg) => desk.toGame(mine.token, msg) });
+  screen('match');
+  $('mode').textContent = mode;
+  $('status').textContent = 'Starting the game';
+  $('leave').textContent = 'Leave';
+  for (const id of ['p0', 'p1', 'score', 'rules']) $(id).textContent = '';
+  await desk.openGame(mine.game.id, mine.token);
+  if (!still()) return false;
+  await placeGame();
+  await Promise.race([mine.table.ready, new Promise((_, no) => setTimeout(() => no(new Error('The game did not open.')), 10000))]);
+  return still();
+}
+/* What happens during a match, the same with a person and with the computer. */
+const during = (mine, still) => ({
+  started: ({ me: seat, players, terms: agreed }) => {
+    if (!still()) return;
+    screen('match');
+    $('rules').textContent = describe(mine.game, agreed, mine.solo);
+    mine.ranked = agreed.ranked; mine.rounds = agreed.rounds; mine.seat = seat; mine.heard = Date.now();
+    drawScore(mine, [0, 0]);
+    players.forEach((p, i) => { $(`p${i}`).textContent = `${p.name}${i === seat ? ' (you)' : ''}`; });
+    $('status').textContent = 'Playing';
+    $('leave').textContent = 'Give up';
+    mine.started = true;
+  },
+  entry: ({ player }) => { if (player !== mine.seat) mine.heard = Date.now(); },
+  ended: ({ score }) => drawScore(mine, score),
+  over: ({ result, me: seat, transcript }) => finish(mine, result, seat, transcript),
+  failed: (reason) => { if (!still()) return; if (!mine.started) { leave(reason); return; } stop(mine, reason); if (!mine.solo) report(mine, mine.session.transcript()); },
+});
+/* Without a server or another person. */
+async function playAlone(game, terms) {
+  if (current) return;
+  const mine = { game, terms, solo: true };
+  current = mine;
+  const still = () => current === mine;
+  try {
+    if (!(await openTable(mine, 'Against the computer', still))) return;
+    mine.session = new Solo({ table: mine.table, game, terms, name: settings.name || 'Player', sound: settings.sound, on: during(mine, still) });
+    mine.table.onMove = (move) => mine.session.play(move);
+    await mine.session.open();
+  } catch (error) { if (still()) leave(error.message); }
+}
 async function play(mine, met, still) {
   waiting('Player found', 'Connecting your two computers.');
   const [wire, me] = await Promise.all([link(met, { hideAddress: settings.hideAddress, iceServers: stun ? [{ urls: stun }] : [] }), identity()]);
   mine.wire = wire;
   if (!still()) { wire.close(); return; }
-  mine.token = crypto.randomUUID();                    // messages of an earlier game are ignored
-  mine.table = createTable({ send: (msg) => desk.toGame(mine.token, msg) });
-  screen('match');
-  $('mode').textContent = wire.mode === 'direct' ? 'Direct connection' : 'Through the server';
-  $('status').textContent = 'Starting the game';
-  $('leave').textContent = 'Leave';
-  for (const id of ['p0', 'p1', 'score', 'rules']) $(id).textContent = '';
-  await desk.openGame(mine.game.id, mine.token);
-  if (!still()) return;
-  await placeGame();
-  await Promise.race([mine.table.ready, new Promise((_, no) => setTimeout(() => no(new Error('The game did not open.')), 10000))]);
-  if (!still()) return;
+  if (!(await openTable(mine, wire.mode === 'direct' ? 'Direct connection' : 'Through the server', still))) return;
   const terms = { ...mine.terms, ranked: !!mine.terms.ranked && !!met.ticket };
   if (met.host) $('status').textContent = 'Waiting for the other player to accept your rules';
   mine.session = new Session({ wire, terms, ticket: met.ticket, theirPub: met.theirPub, sound: settings.sound, table: mine.table, identity: me, host: met.host, game: mine.game, name: settings.name || 'Player', on: {
     terms: (offer) => review(mine, offer),
-    started: ({ me: seat, players, terms: agreed }) => {
-      if (!still()) return;
-      screen('match');
-      $('rules').textContent = describe(mine.game, agreed);
-      mine.ranked = agreed.ranked; mine.rounds = agreed.rounds; mine.seat = seat; mine.heard = Date.now();
-      drawScore(mine, [0, 0]);
-      players.forEach((p, i) => { $(`p${i}`).textContent = `${p.name}${i === seat ? ' (you)' : ''}`; });
-      $('status').textContent = 'Playing';
-      $('leave').textContent = 'Give up';
-      mine.started = true;
-    },
-    entry: ({ player }) => { if (player !== mine.seat) mine.heard = Date.now(); },
-    ended: ({ score }) => drawScore(mine, score),
-    over: ({ result, me: seat, transcript }) => finish(mine, result, seat, transcript),
-    failed: (reason) => { if (!still()) return; if (mine.started) { stop(mine, reason); report(mine, mine.session.transcript()); } else leave(reason); },
+    ...during(mine, still),
   } });
   mine.table.onMove = (move) => mine.session.play(move);
   await mine.session.open();
@@ -187,7 +217,7 @@ async function report(mine, transcript) {
 function finish(mine, result, seat, transcript) {
   mine.over = true;
   const outcome = result.winner === null ? 'draws' : result.winner === seat ? 'wins' : 'losses';
-  addResult(mine.game.id, outcome);
+  addResult(mine.solo ? soloKey(mine.game.id) : mine.game.id, outcome);
   const words = { draws: 'It is a draw.', wins: result.reason === 'resigned' ? 'You win. The other player gave up.' : 'You win.', losses: result.reason === 'resigned' ? 'You gave up.' : 'You lose.' };
   $('status').textContent = words[outcome];
   drawScore(mine, result.score);
@@ -210,7 +240,7 @@ async function placeGame() {
 $('leave').onclick = () => {
   if (!current) return;
   if (current.over || !current.started) leave();
-  else if (Date.now() - current.heard > IDLE_MS) { const mine = current; mine.session.close(); stop(mine, 'The other player stopped playing.'); report(mine, mine.session.transcript()); }
+  else if (!current.solo && Date.now() - current.heard > IDLE_MS) { const mine = current; mine.session.close(); stop(mine, 'The other player stopped playing.'); report(mine, mine.session.transcript()); }
   else current.session.play({ $: 'resign' });
 };
 $('cancel').onclick = () => leave();

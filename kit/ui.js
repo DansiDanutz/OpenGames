@@ -12,14 +12,16 @@
 
    In a best of three or five, `start` is called again for every game and `me` may change. */
 import { Series } from './engine.js';
+import { createComputer, USUAL_PACE_MS } from './computer.js';
 import { setSound } from './sound.js';
 
+const randomHex = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
 const PAUSE_MS = 4000;                                  // to see how a game ended before the next
 
 export async function connect(rules, page) {
   const app = globalThis.opengames;
   if (!app) throw new Error('open this game in OpenGames');
-  let series = null, player = 0, terms = null, names = [], shown = -1;
+  let series = null, computer = null, player = 0, terms = null, names = [], shown = -1;
   const table = {
     play: (move) => app.send({ t: 'move', move: { round: series.round, move } }),
     resign: () => app.send({ t: 'move', move: { $: 'resign' } }),
@@ -36,6 +38,7 @@ export async function connect(rules, page) {
       ({ me: player, terms, players: names } = msg);
       setSound(msg.sound !== false);
       series = new Series(rules, { seed: msg.seed, terms });
+      computer = msg.solo ? createComputer(rules, series, 1 - player, { options: terms.options, seed: randomHex() }) : null;
       deal();
       app.send({ t: 'started', fingerprint: series.fingerprint() });
     },
@@ -50,6 +53,10 @@ export async function connect(rules, page) {
         if (!out.result) setTimeout(deal, PAUSE_MS);
       } else if (out.result) page.end({ result: { winner: seats[out.result.winner], reason: out.result.reason }, me, view: null, score: out.result.score, isLast: true });
       else if (shown === series.round) page.update({ view: series.view(player), by });
+    },
+    think(msg) {
+      const isDealt = computer && shown === series.round;
+      app.send({ t: 'thought', id: msg.id, move: isDealt ? computer.move() : null, ms: isDealt ? computer.pace() : USUAL_PACE_MS });
     },
     refused(msg) { if (shown === series?.round) page.refused?.({ error: msg.error, view: series.view(player) }); },
     sound(msg) { setSound(msg.on !== false); },

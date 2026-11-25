@@ -79,7 +79,7 @@ export function readLibrary(root, kit, approved = null) {
   });
 }
 /* The part of the kit that game pages run. */
-const PAGE_KIT = ['board3d.js', 'engine.js', 'sound.js', 'table.css', 'three.js', 'ui.js'];
+const PAGE_KIT = ['board3d.js', 'computer.js', 'engine.js', 'sound.js', 'table.css', 'three.js', 'ui.js'];
 export function readKit(kit) {
   const files = new Map(PAGE_KIT.map((f) => [f, fs.readFileSync(path.join(kit, f))]));
   return { files, hash: hashFiles(files) };

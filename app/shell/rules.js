@@ -20,7 +20,7 @@ export function readChoices(box) {
 }
 const parts = (game, terms) => [...game.options.map((o) => [o.label, o.choices.find((c) => c.id === terms.options[o.id])]), ['Match', { label: ROUND_NAMES[terms.rounds] }]];
 
-export const describe = (game, terms) => [...parts(game, terms).map(([, c]) => c.label), terms.ranked ? 'Ranked' : 'Not ranked'].join('. ');
+export const describe = (game, terms, isSolo = false) => [...parts(game, terms).map(([, c]) => c.label), ...(isSolo ? [] : [terms.ranked ? 'Ranked' : 'Not ranked'])].join('. ');
 export function drawTerms(list, rules, game, terms) {
   const row = (name, label, note) => [el('dt', { textContent: name }), el('dd', { textContent: label }, ...(note ? [el('small', { textContent: note })] : []))];
   list.replaceChildren(...parts(game, terms).flatMap(([name, c]) => row(name, c.label, c.note)),
