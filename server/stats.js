@@ -82,11 +82,16 @@ export function createStats({ file, library, limits = {}, clock = Date.now }) {
   };
 }
 
+/* Robots, link previews and command-line tools that fetch pages without a person. */
+const ROBOT = /bot|crawl|spider|slurp|preview|facebookexternalhit|curl|wget|python|go-http|node-fetch|headless/i;
+/* A visit is a page a person's browser loaded in full: not a 304 check again, not a robot. */
+const isVisit = (answer, headers) => answer?.status === 200 && !ROBOT.test(String(headers?.['user-agent'] ?? ''));
+
 /* Pages that count each page they showed. A count that fails never stops the page. */
 export function counted(pages, stats) {
   const counting = (pathname, headers) => {
     const answer = pages(pathname, headers);
-    if (answer && answer.status < 400) {
+    if (isVisit(answer, headers)) {
       try { stats.visited(pathname); } catch (error) { console.error('A visit was not counted:', error.message); }
     }
     return answer;

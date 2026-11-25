@@ -66,3 +66,15 @@ test('the server counts each page it shows', async () => {
   await server.close();
   assert.deepEqual(s.visits().pages, [{ page: '/', today: 2, week: 2, month: 2 }, { page: '/games/shikaku', today: 1, week: 1, month: 1 }]);
 });
+test('a page that was only checked again, or fetched by a bot, is not a visit', () => {
+  const seen = [], served = { '/': { status: 200 }, '/play': { status: 304 } };
+  const fake = Object.assign((p) => served[p] ?? null, { has: (p) => p in served });
+  const pages = counted(fake, { visited: (p) => { seen.push(p); return true; } });
+  pages('/play', {});
+  pages('/', { 'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' });
+  pages('/', { 'user-agent': 'facebookexternalhit/1.1' });
+  pages('/', { 'user-agent': 'curl/8.7.1' });
+  pages('/', { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1' });
+  pages('/', {});
+  assert.deepEqual(seen, ['/', '/']);
+});
