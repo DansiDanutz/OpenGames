@@ -45,7 +45,6 @@ function collect(games, kit, stunPort) {
   const OPEN = { 'access-control-allow-origin': '*' };       // a game's frame has no origin, so its own files count as foreign
   const all = new Map([
     ['/play', asset('play.html', shellPage(), SHELL_POLICY)],
-    ['/app/invite.js', asset('invite.js', read('app/invite.js'))],
     ['/web/manifest.json', asset('manifest.json', JSON.stringify(MANIFEST))],
     ['/web/games.json', asset('games.json', JSON.stringify({ stunPort, games: games.map(({ dir, icon, rules, files, ...rest }) => rest) }))],
     ['/web/game.js', asset('game.js', read('web/game.js'), null, OPEN)],

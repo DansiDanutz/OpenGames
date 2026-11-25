@@ -8,10 +8,10 @@ import { createTickets, answerHttp } from './http.js';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LIMITS = { maxBytes: 26 * 1024, perSecond: 80, bytesPerSecond: 64 * 1024, buffered: 256 * 1024, perAddress: 20, opensPerMinute: 60,
-  waitMs: 10 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, invitesPerAddress: 20, pingMs: 30 * 1000, minuteMs: 60 * 1000,
+  waitMs: 60 * 60 * 1000, findMs: 10 * 60 * 1000, awayMs: 10 * 60 * 1000, seatMs: 60 * 1000, againMs: 5000, roomMs: 12 * 60 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, invitesPerAddress: 20, pingMs: 30 * 1000, minuteMs: 60 * 1000,
   quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, pagesPerMinute: 600, findsPerMinute: 30, bodyMs: 25_000, playedMs: 60 * 1000 };
 const CODE_LENGTH = 8;
-const BACK = /^[A-Z2-9]{8}\.[0-9a-f-]{36}$/;          // the code of an invite and its secret
+const BACK = /^[A-Z2-9]{8}\.[0-9a-f-]{36}$/;          // the code of a room and the secret of a seat
 const PUB = /^[0-9a-f]{64}$/;
 const KEY = /^[a-z0-9-]{1,40}@[0-9a-f]{64}$/;         // game@hash: only equal versions meet
 
@@ -30,7 +30,7 @@ export function addressKey(ip) {
 /* proxies: how many trusted proxies stand in front of this server. */
 export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, limits = {}, leaderboard = null, stats = null, site = null } = {}) {
   const L = { ...LIMITS, ...limits };
-  const open = new Map();                              // code -> { host, guest, key, back, address, timer }: an invite
+  const rooms = new Map();                             // code -> room
   const queues = new Map();                            // game@hash -> waiting player
   const addresses = new Map();
   const tickets = createTickets(L.pairMs * 2);
@@ -54,118 +54,199 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   function newCode() {
     for (;;) {
       const code = Array.from({ length: CODE_LENGTH }, () => LETTERS[randomInt(LETTERS.length)]).join('');
-      if (!open.has(code)) return code;
+      if (!rooms.has(code)) return code;
     }
   }
-  function closeInvite(code) {
-    const invite = open.get(code);
-    if (!invite) return;
-    clearTimeout(invite.timer);
-    open.delete(code);
-    seen(invite.address).invites -= 1;
+  /* A room holds two players for as many matches as they like, and outlives their connections: a phone that shows
+     another app cuts its own. `back` proves whose seat it is. */
+  const emptySeat = () => ({ ws: null, back: null, pub: null, address: null, wants: null, timer: null });
+  function openRoom(ws, key, isInvite = true) {
+    const code = newCode();
+    const room = { code, key, seats: [emptySeat(), emptySeat()], epoch: 0, match: 0, began: 0, born: Date.now(), ticket: null, address: isInvite ? ws.og.address : null, timer: null, away: null, played: null, soon: null };
+    rooms.set(code, room);
+    if (isInvite) seen(room.address).invites += 1;
+    expire(room, L.waitMs);
+    sit(room, 0, ws);
+    return room;
   }
-  /* An invite outlives its connection, because a phone that shows another app cuts it. `back` proves whose it is. */
-  function returnTo(ws, back) {
-    const [code] = back.split('.'), invite = open.get(code);
-    if (invite?.back !== back) return tell(ws, { t: 'expired' });
-    if (invite.host) { invite.host.og.code = null; invite.host.terminate(); }
-    invite.host = ws;
-    ws.og.code = code; ws.og.key = invite.key;
-    tell(ws, { t: 'code', code, back });
-    const { guest } = invite;
-    return guest && pair(ws, guest, invite.key);
+  function sit(room, i, ws) {
+    const seat = room.seats[i];
+    if (seat.ws && seat.ws !== ws) { const old = seat.ws; old.og.room = null; tell(old, { t: 'taken' }); old.close(1000); hush(old); }
+    Object.assign(seat, { ws, back: seat.back ?? `${room.code}.${randomUUID()}`, pub: seat.pub ?? ws.og.pub, address: ws.og.address, wants: null });
+    ws.og.room = room; ws.og.seat = i;
+    clearTimeout(seat.timer);
+    mind(room);
+    tell(ws, { t: 'seat', back: seat.back, code: room.epoch ? null : room.code, host: i === 0, epoch: room.epoch });
+  }
+  /* A room nobody comes back to ends: after the two have met both must be there, before that one is enough. */
+  function mind(room) {
+    clearTimeout(room.away);
+    const empty = room.seats.filter((s) => !s.ws).length;
+    if (empty < (room.epoch ? 1 : 2)) return;
+    room.away = setTimeout(() => closeRoom(room, 'expired'), L.awayMs);
+    room.away.unref();
+  }
+  /* A friend who never met the host makes room for another. */
+  function freeSeat(room) {
+    const { ws } = room.seats[1];
+    if (ws) ws.og.room = null;
+    if (ws) hush(ws);
+    room.seats[1] = emptySeat();
+    mind(room);
+  }
+  function expire(room, ms) {
+    clearTimeout(room.timer);
+    room.timer = setTimeout(() => closeRoom(room, 'expired'), ms);
+    room.timer.unref();
+  }
+  /* Whoever is in no room and no queue has nothing to do here. */
+  function hush(ws) {
+    clearTimeout(ws.og.quiet);
+    ws.og.quiet = setTimeout(() => ws.terminate(), L.quietMs);
+    ws.og.quiet.unref();
+  }
+  const timersOf = (room) => [room.timer, room.away, room.played, room.soon, room.seats[1].timer];
+  function closeRoom(room, why) {
+    if (rooms.get(room.code) !== room) return;
+    for (const timer of timersOf(room)) clearTimeout(timer);
+    rooms.delete(room.code);
+    if (room.address) seen(room.address).invites -= 1;
+    for (const { ws } of room.seats) if (ws) { ws.og.room = null; tell(ws, { t: why }); hush(ws); }
+  }
+  /* Tells both players to connect to each other: for a new match, or again for the one they are playing. */
+  function introduce(room, isNew) {
+    const [a, b] = room.seats;
+    room.epoch += 1;
+    a.wants = b.wants = null;
+    expire(room, Math.min(L.pairMs, room.born + L.roomMs - Date.now()));
+    if (isNew) {
+      room.match += 1; room.began = Date.now();
+      const canRank = !!leaderboard && !!a.pub && !!b.pub && a.pub !== b.pub && (L.rankSameAddress || a.address !== b.address);
+      room.ticket = canRank ? randomUUID() : null;
+      if (canRank) tickets.add(room.ticket, { key: room.key, pubs: [a.pub, b.pub] });
+      clearTimeout(room.played);
+      if (stats) {
+        const homes = [a.address, b.address];
+        room.played = setTimeout(() => { try { stats.played(room.key, homes); } catch (error) { console.error('A match was not counted:', error.message); } }, L.playedMs);
+        room.played.unref();
+      }
+    }
+    room.seats.forEach(({ ws }, i) => tell(ws, { t: 'paired', host: i === 0, epoch: room.epoch, match: room.match, ticket: room.ticket, pub: room.ticket ? room.seats[1 - i].pub : null }));
   }
   function stopWaiting(ws) {
     clearTimeout(ws.og.timer);
-    if (ws.og.code) closeInvite(ws.og.code);
-    if (ws.og.visiting && open.get(ws.og.visiting)?.guest === ws) open.get(ws.og.visiting).guest = null;
     if (ws.og.queue && queues.get(ws.og.queue) === ws) queues.delete(ws.og.queue);
-    ws.og = { ...ws.og, code: null, visiting: null, queue: null, timer: null };
+    ws.og.queue = ws.og.timer = null;
   }
-  function wait(ws) {
-    ws.og.timer = setTimeout(() => { stopWaiting(ws); tell(ws, { t: 'expired' }); }, L.waitMs);
-    ws.og.timer.unref();
-  }
-  function pair(host, guest, key) {
-    stopWaiting(host); stopWaiting(guest);
-    const ticket = randomUUID(), pubs = [host.og.pub, guest.og.pub];
-    const canRank = !!leaderboard && pubs.every((p) => p) && pubs[0] !== pubs[1] && (L.rankSameAddress || host.og.address !== guest.og.address);
-    if (canRank) tickets.add(ticket, { key, pubs });
-    host.og.peer = guest; guest.og.peer = host;
-    const timer = setTimeout(() => { host.terminate(); guest.terminate(); }, L.pairMs);
-    timer.unref();
-    host.og.timer = guest.og.timer = timer;
-    if (stats) {
-      host.og.played = setTimeout(() => {
-        try { stats.played(key, [host.og.address, guest.og.address]); } catch (error) { console.error('A match was not counted:', error.message); }
-      }, L.playedMs);
-      host.og.played.unref();
+  const other = (ws) => ws.og.room?.seats[1 - ws.og.seat];
+  const bad = (ws) => tell(ws, { t: 'error', error: 'bad_request' });
+  const isBusy = (ws, msg) => ws.og.room || ws.og.queue || !is(KEY, msg.key);
+  /* What one player wants happens when the other wants it too. */
+  function want(ws, msg, what, isNew) {
+    const { room } = ws.og, peer = other(ws);
+    if (!room?.epoch || msg.epoch !== room.epoch) return;  // asked before the two were introduced again
+    room.seats[ws.og.seat].wants = what;
+    if (peer.ws && peer.wants === what) {
+      // Two players who only ask for new matches must not fill the memory.
+      const wait = isNew ? room.began + L.againMs - Date.now() : 0;
+      if (wait <= 0) { introduce(room, isNew); return; }
+      clearTimeout(room.soon);
+      room.soon = setTimeout(() => { if (room.seats.every((s) => s.ws && s.wants === what)) introduce(room, isNew); }, wait);
+      room.soon.unref();
     }
-    tell(host, { t: 'paired', host: true, ticket: canRank ? ticket : null, pub: canRank ? pubs[1] : null });
-    tell(guest, { t: 'paired', host: false, ticket: canRank ? ticket : null, pub: canRank ? pubs[0] : null });
+    else if (peer.ws) tell(peer.ws, { t: what });
   }
-  const busy = (ws) => ws.og.peer || ws.og.code || ws.og.visiting || ws.og.queue;
 
   const actions = {
     create(ws, msg) {
-      if (busy(ws) || !is(KEY, msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
-      if (is(BACK, msg.back)) return returnTo(ws, msg.back);
-      const from = seen(ws.og.address);
-      if (from.invites >= L.invitesPerAddress) return tell(ws, { t: 'error', error: 'too_many' });
-      from.invites += 1;
-      const code = newCode(), invite = { host: ws, guest: null, key: msg.key, back: `${code}.${randomUUID()}`, stays: msg.stays === true, address: ws.og.address };
-      invite.timer = setTimeout(() => {
-        for (const p of [invite.host, invite.guest]) if (p) { p.og.code = null; p.og.visiting = null; tell(p, { t: 'expired' }); }
-        closeInvite(code);
-      }, L.waitMs);
-      invite.timer.unref();
-      open.set(code, invite);
-      ws.og.code = code; ws.og.key = msg.key;
-      return tell(ws, { t: 'code', code, back: invite.back });
+      if (isBusy(ws, msg)) return bad(ws);
+      if (seen(ws.og.address).invites >= L.invitesPerAddress) return tell(ws, { t: 'error', error: 'too_many' });
+      return openRoom(ws, msg.key);
+    },
+    back(ws, msg) {
+      if (isBusy(ws, msg) || !is(BACK, msg.back)) return bad(ws);
+      const room = rooms.get(msg.back.split('.')[0]), i = room?.key === msg.key ? room.seats.findIndex((s) => s.back === msg.back) : -1;
+      if (i < 0) {
+        tell(ws, { t: 'expired' });
+        if (++seen(ws.og.address).tries >= L.joinTries) ws.close(1008);
+        return undefined;
+      }
+      const had = room.seats[1 - i].wants;
+      sit(room, i, ws);
+      const peer = other(ws);
+      if (!room.epoch) return peer.ws ? introduce(room, true) : i === 1 && tell(ws, { t: 'waiting' });
+      if (peer.ws) tell(peer.ws, { t: 'here' }); else tell(ws, { t: 'away' });
+      return had && tell(ws, { t: had });
     },
     join(ws, msg) {
-      if (busy(ws) || !is(KEY, msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
-      const code = String(msg.code || '').toUpperCase(), invite = open.get(code);
-      if (!invite || invite.key !== msg.key || invite.guest) {
+      if (isBusy(ws, msg)) return bad(ws);
+      const room = rooms.get(String(msg.code || '').toUpperCase());
+      if (!room || room.key !== msg.key || room.seats[1].back) {
         tell(ws, { t: 'error', error: 'no_match' });
         if (++seen(ws.og.address).tries >= L.joinTries) ws.close(1008);
         return undefined;
       }
-      if (invite.host) return pair(invite.host, ws, msg.key);
-      invite.guest = ws;
-      ws.og.visiting = code;
-      return tell(ws, { t: 'waiting' });
+      sit(room, 1, ws);
+      return room.seats[0].ws ? introduce(room, true) : tell(ws, { t: 'waiting' });
     },
     find(ws, msg) {
-      if (busy(ws) || !is(KEY, msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
+      if (isBusy(ws, msg)) return bad(ws);
       // Nobody may meet everyone who looks for a player. Homes and phones share addresses, so the limit is wide.
       if (seen(ws.og.address).finds >= L.findsPerMinute) return tell(ws, { t: 'error', error: 'too_many' });
-      const other = queues.get(msg.key);
-      if (other) {
-        for (const address of new Set([ws.og.address, other.og.address])) seen(address).finds += 1;
-        return pair(other, ws, msg.key);
+      const first = queues.get(msg.key);
+      if (first) {
+        for (const address of new Set([ws.og.address, first.og.address])) seen(address).finds += 1;
+        stopWaiting(first);
+        const room = openRoom(first, msg.key, false);
+        sit(room, 1, ws);
+        return introduce(room, true);
       }
-      ws.og.queue = msg.key; queues.set(msg.key, ws); wait(ws);
+      ws.og.queue = msg.key; queues.set(msg.key, ws);
+      ws.og.timer = setTimeout(() => { stopWaiting(ws); tell(ws, { t: 'expired' }); }, L.findMs);
+      ws.og.timer.unref();
       return tell(ws, { t: 'searching' });
     },
-    leave: (ws) => {
-      if (ws.og.peer) return;
-      const guest = open.get(ws.og.code)?.guest;
+    link: (ws, msg) => want(ws, msg, 'link', false),
+    again: (ws, msg) => want(ws, msg, 'again', true),
+    leave(ws) {
       stopWaiting(ws);
-      if (guest) { guest.og.visiting = null; tell(guest, { t: 'error', error: 'no_match' }); }
-    },   // the pair's own time limit stays
-    signal: (ws, msg) => ws.og.peer && tell(ws.og.peer, { t: 'signal', data: msg.data }),
-    relay: (ws, msg) => ws.og.peer && tell(ws.og.peer, { t: 'relay', data: msg.data }),
+      hush(ws);
+      const { room } = ws.og;
+      if (!room) return;
+      if (!room.epoch && ws.og.seat === 1) { freeSeat(room); return; }
+      room.seats[ws.og.seat].ws = null;
+      ws.og.room = null;
+      closeRoom(room, room.epoch ? 'left' : 'expired');
+    },
+    signal: (ws, msg) => pass(ws, msg, 'signal'),
+    relay: (ws, msg) => pass(ws, msg, 'relay'),
   };
+  /* Nothing of an earlier connection reaches a later one. */
+  function pass(ws, msg, t) {
+    const { room } = ws.og, to = other(ws)?.ws;
+    if (to && room.epoch && msg.epoch === room.epoch) tell(to, { t, epoch: room.epoch, data: msg.data });
+  }
+  function lost(ws) {
+    stopWaiting(ws);
+    const { room, seat } = ws.og;
+    if (!room || room.seats[seat].ws !== ws) return;
+    const peer = other(ws);
+    Object.assign(room.seats[seat], { ws: null, wants: null });
+    if (!room.epoch && seat === 1) {
+      room.seats[1].timer = setTimeout(() => freeSeat(room), L.seatMs);
+      room.seats[1].timer.unref();
+    }
+    mind(room);
+    if (peer.ws && room.epoch) tell(peer.ws, { t: 'away' });
+  }
 
   wss.on('connection', (ws, req) => {
     ws.on('error', () => ws.terminate());                // first, so no bad frame can stop the server
     const address = addressOf(req), from = seen(address);
     if (from.count >= L.perAddress || ++from.opens > L.opensPerMinute || from.tries >= L.joinTries) { ws.terminate(); return; }
     from.count++;
-    ws.og = { address, pub: null, peer: null, code: null, visiting: null, queue: null, key: null, timer: null, alive: true };
-    ws.og.quiet = setTimeout(() => ws.terminate(), L.quietMs);   // somebody who only connects is not a player
-    ws.og.quiet.unref();
+    ws.og = { address, pub: null, room: null, seat: 0, queue: null, timer: null, quiet: null, alive: true };
+    hush(ws);                                            // somebody who only connects is not a player
     let second = 0, used = 0, bytes = 0;
     ws.on('pong', () => { ws.og.alive = true; });
     ws.on('message', (raw, binary) => {
@@ -175,20 +256,14 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       if (binary || ++used > L.perSecond || bytes > L.bytesPerSecond) { ws.close(1008); return; }
       let msg;
       try { msg = JSON.parse(raw); } catch { ws.close(1007); return; }
-      clearTimeout(ws.og.quiet);
       if (msg && is(PUB, msg.pub) && !ws.og.pub) ws.og.pub = msg.pub;       // whose ranked match this will be
       if (!msg || !Object.hasOwn(actions, msg.t)) return;
       // One player's message must never stop the server for the others.
-      try { actions[msg.t](ws, msg); } catch (error) { console.error('A message failed:', error.message); ws.close(1011); }
+      try { actions[msg.t](ws, msg); if (ws.og.room || ws.og.queue) clearTimeout(ws.og.quiet); } catch (error) { console.error('A message failed:', error.message); ws.close(1011); }
     });
     ws.on('close', () => {
       clearTimeout(ws.og.quiet);
-      const invite = ws.og.code && !ws.og.peer && open.get(ws.og.code);
-      if (invite?.stays) { invite.host = null; ws.og.code = null; }   // an app that does not come back loses its invite at once
-      stopWaiting(ws);
-      const { peer } = ws.og;
-      clearTimeout(ws.og.played); clearTimeout(peer?.og.played);
-      if (peer) { peer.og.peer = null; ws.og.peer = null; tell(peer, { t: 'gone' }); }
+      lost(ws);
       from.count--;
     });
   });
@@ -209,8 +284,8 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     http.once('error', reject);                          // only before it listens; later errors are per player
     http.listen(port, host, () => resolve({
       port: http.address().port,
-      counts: () => ({ open: open.size, queues: queues.size, clients: wss.clients.size, addresses: [...addresses.values()].filter((a) => a.count).length }),
-      close: () => new Promise((done) => { clearInterval(ping); wss.clients.forEach((c) => c.terminate()); wss.close(); http.close(done); http.closeAllConnections(); for (const x of open.values()) clearTimeout(x.timer); }),
+      counts: () => ({ open: rooms.size, queues: queues.size, clients: wss.clients.size, addresses: [...addresses.values()].filter((a) => a.count).length }),
+      close: () => new Promise((done) => { clearInterval(ping); wss.clients.forEach((c) => c.terminate()); wss.close(); http.close(done); http.closeAllConnections(); for (const x of rooms.values()) timersOf(x).forEach(clearTimeout); }),
     }));
   });
 }

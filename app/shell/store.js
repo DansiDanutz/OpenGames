@@ -12,6 +12,11 @@ export const settings = {
   get sound() { return read('sound', true); },
   set sound(v) { write('sound', !!v); },
 };
+/* The room this window is in, so that a page a phone has thrown away comes back to it. */
+export const myRoom = {
+  get value() { try { return JSON.parse(sessionStorage.getItem('room')); } catch { return null; } },
+  set value(v) { if (v) sessionStorage.setItem('room', JSON.stringify(v)); else sessionStorage.removeItem('room'); },
+};
 /* The last rules a player chose for a game. */
 export const lastTerms = (gameId) => read(`terms:${gameId}`, {});
 export const saveTerms = (gameId, terms) => write(`terms:${gameId}`, terms);

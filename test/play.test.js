@@ -11,7 +11,7 @@ const play = createPlay({ games, stunPort: 3478 });
 const policy = (p, host = 'play.example.org') => play(p, { host }).headers['content-security-policy'];
 
 test('the app, the kit and every game are there, and nothing else is', () => {
-  for (const p of ['/play', '/app/shell/shell.js', '/app/invite.js', '/kit/ui.js', '/web/desk.js', '/web/icon-192.png', ...games.flatMap((g) => [`/icons/${g.id}`, `/table/${g.id}/${g.page}`, `/table/${g.id}/${g.rules}`])]) assert.equal(play(p).status, 200, p);
+  for (const p of ['/play', '/app/shell/shell.js', '/app/shell/invite.js', '/kit/ui.js', '/web/desk.js', '/web/icon-192.png', ...games.flatMap((g) => [`/icons/${g.id}`, `/table/${g.id}/${g.page}`, `/table/${g.id}/${g.rules}`])]) assert.equal(play(p).status, 200, p);
   for (const p of ['/app/main.js', '/app/shell/../main.js', '/server/main.js', '/package.json', '/kit/check.js', '/table/shikaku/', '/table/shikaku/../gemhold/rules.js', '/table/shikaku/creator.json', '/web/', '/__proto__', '/leaderboard']) assert.equal(play(p), null, p);
 });
 test('the list of games has what the app needs and no files', () => {

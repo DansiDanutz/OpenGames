@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import dgram from 'node:dgram';
 import net from 'node:net';
-import { accept, apps, choose, closeAll, inGame, invite, open, row, server, shot, status } from './windows.js';
+import { accept, apps, closeAll, enter, inGame, invite, join, open, row, server, shot, status } from './windows.js';
 
 /* Counts everything that reaches this computer's network from a page. */
 async function listeners() {
@@ -40,17 +40,17 @@ const drag = (rects) => `(() => {
 const solve = (p) => inGame(p, "import('./rules.js').then(({ solve }) => solve(document.getElementById('board').inspect().puzzle))");
 /* Both look for a player; whoever joined reads the rules and accepts them. */
 async function find(a, b) {
-  await row(a, 'shikaku').getByText('Find a player').click();
-  await choose(a);
+  await enter(a, 'shikaku');
+  await a.page.click('#find');
   await a.page.waitForSelector('text=Looking for a player');
-  await row(b, 'shikaku').getByText('Find a player').click();
-  await choose(b);
+  await enter(b, 'shikaku');
+  await b.page.click('#find');
   await accept(b);
   await Promise.all([a, b].map((p) => status(p, /^Playing$/)));
 }
 try {
   const [ann, bob] = [await open('Ann'), await open('Bob')];
-  assert.ok(await ann.page.evaluate(() => [...document.querySelectorAll('.art')].every((i) => i.complete && i.naturalWidth)), 'the game pictures load');
+  assert.ok(await ann.page.evaluate(() => [...document.querySelectorAll('#games .art')].every((i) => i.complete && i.naturalWidth)), 'the game pictures load');
   await shot(ann, 'library');
 
   await invite(ann, bob);
@@ -101,9 +101,16 @@ try {
   await Promise.all([status(bob, /^You win\. \+16 points\.$/), status(ann, /^You lose\. .16 points\.$/)]);
   await bob.page.waitForTimeout(400);
   await shot(bob, 'won');
+  // Another match with the same friend: one tap each, no code and no question.
+  await ann.page.click('#again');
+  await status(bob, /Ann wants to play again/);
+  await bob.page.click('#again');
+  await Promise.all([ann, bob].map((p) => status(p, /^Playing$/)));
+  await ann.page.click('#leave');
+  await Promise.all([status(ann, /^You gave up\./), status(bob, /gave up\./)]);
   for (const p of [ann, bob]) await p.page.click('#leave');
-  await bob.page.waitForSelector('text=You won 1 and lost 0');
-  await ann.page.waitForSelector('text=You won 0 and lost 1');
+  await bob.page.waitForSelector('text=You won 2 and lost 0');
+  await ann.page.waitForSelector('text=You won 0 and lost 2');
 
   // Hidden address: the match goes through the server.
   await bob.page.check('#hide');
@@ -117,31 +124,32 @@ try {
   await find(ann, bob);
   await bob.app.close();
   apps.pop();
-  await status(ann, /connection was lost.*does not count/);
+  await status(ann, /Bob left the app for a moment|Connecting again/);
   await ann.page.click('#leave');
-  await ann.page.waitForSelector('text=You won 1 and lost 1');
+  await status(ann, /does not count/);
+  await ann.page.click('#leave');
+  await ann.page.waitForSelector('text=You won 1 and lost 2');
 
   // Games opened and closed quickly: the last one works. A game that floods the app is closed.
   const carl = await open('Carl');
-  for (let i = 0; i < 4; i++) { await row(ann, 'shikaku').getByText('Find a player').click(); await choose(ann); await ann.page.click('#cancel'); }
+  for (let i = 0; i < 4; i++) { await enter(ann, 'shikaku'); await ann.page.click('#find'); await ann.page.click('#cancel'); }
   for (let i = 0; i < 2; i++) {
     await invite(ann, carl);
     if (i) await inGame(carl, 'for (let n = 0; n < 1000; n++) opengames.send({ t: "x", n }); 0').catch(() => {});
     else await carl.page.click('#leave');
-    await status(ann, i ? /connection was lost/ : /gave up/);
+    await status(ann, i ? /Carl left/ : /gave up/);
     if (i) await status(carl, /stopped working/);
     for (const p of [ann, carl]) await p.page.click('#leave');
   }
-  await ann.page.waitForSelector('text=You won 2 and lost 1');   // the closed match did not count
+  await ann.page.waitForSelector('text=You won 2 and lost 2');   // the closed match did not count
   // An invite can be copied or sent on WhatsApp. Nothing really leaves this computer here.
   await ann.app.evaluate(({ shell, clipboard }) => {
     globalThis.sent = [];
     shell.openExternal = async (url) => { globalThis.sent.push(url); };
     clipboard.writeText = (text) => { globalThis.sent.push(text); };
   });
-  await row(ann, 'shikaku').getByText('Invite a friend').click();
-  await choose(ann);
-  await ann.page.waitForFunction(() => /^[A-Z2-9]{8}$/.test(document.getElementById('code').textContent), null, { polling: 100 });
+  await enter(ann, 'shikaku');
+  await ann.page.waitForSelector('#share:not([hidden])');
   const code = await ann.page.textContent('#code');
   for (const [how, said] of [['code', 'The code is copied'], ['message', 'The invite is copied'], ['whatsapp', 'WhatsApp is opening']]) {
     await ann.page.click(`#share [data-how=${how}]`);
@@ -160,11 +168,10 @@ try {
   await ann.page.waitForTimeout(150);
   assert.ok(await ann.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await shot(ann, 'invite-share-360');
-  await ann.page.click('#cancel');
+  await ann.page.click('#roomBack');
   await ann.page.waitForSelector('#library:not([hidden])');
   // A wrong code, then the server is off.
-  await row(ann, 'shikaku').locator('.join input').fill('AAAAAAAA');
-  await row(ann, 'shikaku').locator('.join button').click();
+  await join(ann, 'shikaku', 'AAAAAAAA');
   await ann.page.waitForSelector('text=There is no open match with that code');
   for (const width of [360, 768, 1080]) {
     await ann.app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setContentSize(w, 760), width);
@@ -176,8 +183,9 @@ try {
   await row(ann, 'gemhold').getByText('Leaderboard').click();
   await ann.page.waitForSelector('text=The leaderboard cannot be reached');
   await ann.page.click('#boardBack');
-  await row(ann, 'shikaku').getByText('Find a player').click();
-  await choose(ann);
+  await enter(ann, 'shikaku');
+  await ann.page.waitForSelector('text=You are offline');
+  await ann.page.click('#find');
   await ann.page.waitForSelector('text=The match server cannot be reached');
   assert.deepEqual([...ann.errors, ...bob.errors].filter((e) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(e)), []);
   console.log('APP OK: direct match, server match, lost player, wrong code, server off, game locked in');

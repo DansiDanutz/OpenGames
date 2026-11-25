@@ -1,6 +1,6 @@
 /* What the app's main process does on a computer, done by the browser: opens games in a locked frame, asks the
    match server, copies invites, and offers to install the app. */
-import { inviteText, whatsappUrl } from '/app/invite.js';
+import { inviteText, whatsappUrl } from '/app/shell/invite.js';
 
 const MAX_MESSAGE = 32 * 1024, MAX_PER_SECOND = 200;
 let library = [], frame = null, token = null, second = 0, used = 0;
@@ -64,8 +64,8 @@ globalThis.desk = {
     if (!url) throw new Error('unknown link');
     if (confirm(`Open ${new URL(url).hostname}?\n\n${url}\n\nThis page does not belong to OpenGames.`)) open(url, '_blank', 'noopener,noreferrer');
   },
-  async invite(id, code, how) {
-    const text = inviteText({ game: find(id), code, server: location.origin });
+  async invite(id, code, how, says) {
+    const text = inviteText({ game: find(id), code, server: location.origin, ...says });
     if (how === 'whatsapp') open(whatsappUrl(text), '_blank', 'noopener,noreferrer');
     else await navigator.clipboard.writeText(how === 'code' ? code : text);
   },

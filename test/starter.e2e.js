@@ -8,12 +8,12 @@ import path from 'node:path';
 const dir = newGame({ id: 'starter-try', name: 'Starter Try', author: 'some-one' });
 fs.writeFileSync(path.join(dir, 'creator.json'), JSON.stringify({ support: 'https://ko-fi.com/some_one', sponsor: { name: 'Puzzle Shop', text: 'Wooden puzzles made by hand', url: 'https://puzzles.example.com/' } }));
 try {
-  const { open, closeAll, choose, row, status, inGame, shot } = await import('./windows.js');
+  const { open, closeAll, enter, row, status, inGame, shot } = await import('./windows.js');
   try {
     const ann = await open('Ann');
     for (const size of ['5', '7']) {
-      await row(ann, 'starter-try').getByText('Play alone').click();
-      await choose(ann, { options: { size } });
+      await enter(ann, 'starter-try', { options: { size } });
+      await ann.page.click('#solo');
       await status(ann, /^Playing$/);
       const isOver = async () => /You (win|lose)/.test(await ann.page.textContent('#status'));
       for (const end = Date.now() + 60_000; !(await isOver()) && Date.now() < end;) {

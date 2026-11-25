@@ -83,9 +83,9 @@ async function playFor(playedMs, waitMs, addresses = ['10.0.0.1', '10.0.0.2']) {
   const b = join({ t: 'join', code: a.code }, addresses[1]);
   await until(() => a.paired && b.paired);
   await new Promise((r) => { setTimeout(r, waitMs); });
-  b.paired.close();
+  b.cancel();
   await new Promise((r) => { setTimeout(r, 120); });
-  a.paired.close();
+  a.cancel();
   await s.close();
   return counted;
 }

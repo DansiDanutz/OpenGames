@@ -1,6 +1,6 @@
 /* Every game alone against the computer, in a real window, with the match server switched off. */
 import assert from 'node:assert/strict';
-import { choose, closeAll, inGame, open, row, server, shot, status } from './windows.js';
+import { closeAll, enter, inGame, open, row, server, shot, status } from './windows.js';
 
 const press = `(board, r0, c0, r1, c1) => {
   const ev = (type, r, c) => { const { x, y } = board.pointOf(r, c); board.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, buttons: 1, clientX: x, clientY: y })); };
@@ -16,10 +16,8 @@ async function until(what, check, ms = 9000) {
   while (!(await check())) { if (Date.now() > end) throw new Error(`waited for ${what}`); await new Promise((r) => setTimeout(r, 40)); }
 }
 async function begin(p, game, rules) {
-  await row(p, game).getByText('Play alone').click();
-  await p.page.waitForSelector('#setup:not([hidden])');
-  assert.equal(await p.page.isVisible('#rankedPart'), false);
-  await choose(p, rules);
+  await enter(p, game, rules);
+  await p.page.click('#solo');
   await status(p, /^Playing$/);
   assert.equal(await p.page.textContent('#mode'), 'Against the computer');
   assert.ok(!/[Rr]anked/.test(await p.page.textContent('#rules')));
@@ -77,8 +75,8 @@ try {
   assert.ok(!/on this computer/.test(await ann.page.textContent('#games')));
   await ann.page.setViewportSize?.({ width: 360, height: 760 }).catch(() => {});
   await shot(ann, 'solo-library');
-  await row(ann, 'shikaku').getByText('Find a player').click();
-  await choose(ann);
+  await enter(ann, 'shikaku');
+  await ann.page.click('#find');
   await ann.page.waitForSelector('#library:not([hidden])');
   assert.match(await ann.page.textContent('#notice'), /cannot be reached/);
   assert.deepEqual(ann.errors.filter((e) => !/ERR_CONNECTION_REFUSED|WebSocket/.test(e)), []);
