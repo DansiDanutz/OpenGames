@@ -41,6 +41,7 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     match: db.prepare('SELECT finished FROM matches WHERE ticket = ?'),
     save: db.prepare('INSERT INTO matches (ticket, game, a, b, finished, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ticket) DO UPDATE SET finished = excluded.finished, at = excluded.at'),
     recent: db.prepare('SELECT count(*) AS n FROM matches WHERE game = ? AND a = ? AND b = ? AND finished = 1 AND at > ?'),
+    players: db.prepare('SELECT count(*) AS n FROM players WHERE game = ? AND wins + losses + draws > 0'),
     top: db.prepare(`SELECT pub, name, rating, wins, losses, draws, unfinished FROM players WHERE game = ? AND wins + losses + draws > 0
       AND (wins + losses + draws + unfinished < ? OR wins + losses + draws >= ? * (wins + losses + draws + unfinished)) ORDER BY rating DESC, wins DESC, pub LIMIT ?`),
   };
@@ -98,6 +99,7 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
       return out;
     },
     top: (game) => q.top.all(game, L.newPlayer, L.minFinished, L.top).map((p) => ({ ...p })),
+    players: (game) => q.players.get(game).n,
     close: () => db.close(),
   };
 }

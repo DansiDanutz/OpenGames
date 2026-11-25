@@ -1,0 +1,2 @@
+iframe.game{position:fixed;border:0;background:var(--ground)}
+#installHelp{margin:0;padding:12px 24px;background:var(--felt);border-bottom:1px solid var(--line);color:var(--soft);text-align:center}

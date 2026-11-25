@@ -4,6 +4,11 @@
 
 Three games in 3D, with sound: Shikaku, Gemhold, and Avioane & Bărcuțe. There are no accounts and no payments. Nothing of value can be won; a place on a leaderboard is all there is.
 
+## Play in a browser or on a phone
+The match server also serves the app at `/play`: the same games, against the same players. It can be installed on a phone or computer (**Install the app**; on an iPhone, Share and *Add to Home Screen*). There is nothing to sign in to: the player's name and key stay in that browser, so they are the same player next time. Another browser or a cleared one is a new player. An invite holds a link that opens the match, and it waits ten minutes even when the phone shows WhatsApp.
+
+A game runs in a sandboxed frame with an origin of its own and no network. The tests try to get out of it in Chrome and WebKit: other addresses, the window around it, frames of its own, WebRTC. One thing the rules of browsers leave open is a hint to look up or connect to an address (`dns-prefetch`, `preconnect`); reading every game before it is approved covers that. Firefox is not tested. An invite link only asks; nobody is connected before **Join**.
+
 ## Try it
 ```sh
 pnpm install
@@ -20,7 +25,7 @@ The player who starts a match chooses the rules: the board, easy or hard, heads-
 | Gemhold | 5, 6, 7, 10 | open field | rocks on the field |
 | Avioane & Bărcuțe | 8, 10, 12 | a miss beside a piece is "near" | a miss is only a miss |
 
-1. The match server pairs two players who have the same version of a game.
+1. The match server pairs two players who have the same version of a game. An invite can be copied, or opened in WhatsApp with one click; the player sends it.
 2. The two computers try a direct connection. If that fails, or a player hides their address, the server passes the messages on.
 3. Each player commits to a secret, then both reveal it. Together the secrets make the seed, so neither player can choose the board.
 4. Every move is signed by its player and checked by the game's rules on both computers. The rules the players agreed on are part of what they sign. The moves form a signed chain, so a referee can replay the match.
@@ -55,7 +60,9 @@ DATA_DIR=/var/lib/opengames STUN_PORT=3478 HOST=0.0.0.0 PORT=4310 TRUST_PROXY=1 
 ```
 Or use `deploy/`: `PLAY_DOMAIN=play.example.org docker compose -f deploy/compose.yml up -d --build` runs the server behind Caddy, which gets the certificate. Open ports 80, 443 and 3478/udp. If Traefik already owns those ports, use `deploy/install-traefik.sh` instead.
 
-Node 26 or newer. Put a proxy with TLS in front of it, so players use `wss://`. `TRUST_PROXY` is the number of proxies in front; leave it at 0 without one, or anybody can pretend to be another address. `STUN_PORT` (UDP, not behind the proxy) lets players find a direct connection over the internet. Without `DATA_DIR` there are no leaderboards. Back up `leaderboard.db`. `GET /health` answers when the server is up. On one computer, 3000 players sent 5,850 messages a second through the server with none lost (99% under 30 ms, 95 MB of memory).
+Node 26 or newer. Put a proxy with TLS in front of it, so players use `wss://`. `TRUST_PROXY` is the number of proxies in front; leave it at 0 without one, or anybody can pretend to be another address. `STUN_PORT` (UDP, not behind the proxy) lets players find a direct connection over the internet. Without `DATA_DIR` there are no leaderboards and no counts. Back up `leaderboard.db` and `stats.db`. `GET /health` answers when the server is up. On one computer, 3000 players sent 5,850 messages a second through the server with none lost (99% under 30 ms, 95 MB of memory).
+
+The server also has public pages without scripts: `/` (the games), `/games/<id>` (a page to share), `/creators` (how to start) and `/creators/<author>` (a dashboard with matches per day). It keeps one number per game and day, nothing about players. A match counts when two players at different addresses stay for a minute, at most 20 a day per address and game; play against the computer is never counted.
 
 ## Build the app
 ```sh
@@ -76,7 +83,7 @@ The server is built in. The packed app checks its own files, cannot be run as pl
 - **Very slow graphics:** games lower their own detail, but they need WebGL 2.
 
 ## Tests
-`pnpm test` (engine, series, session, server, leaderboard, network, check), `pnpm test:app` (real windows), `node test/packed.e2e.js <program>` (the packed app), `pnpm check`.
+`pnpm test` (engine, series, session, server, site, leaderboard, network, check), `pnpm test:app` (real windows, and a phone's screen in Chrome; `node test/web.e2e.js webkit` for an iPhone's), `node test/packed.e2e.js <program>` (the packed app), `pnpm check`.
 
 ## Licenses
 The app and server: AGPL-3.0. The game kit (`kit/`) and the three games: MIT. three.js: MIT.

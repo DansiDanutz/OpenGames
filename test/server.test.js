@@ -192,3 +192,102 @@ test('a player who already waits is not sent away because of others at the same 
   await until(() => late.error);
   assert.deepEqual([other.error, other.closed], [undefined, undefined]);
 }));
+/* A player whose connection can be cut as a phone does it. */
+function phone(port, ask, waitMs) {
+  const c = { sockets: [] };
+  class Socket extends WebSocket { constructor(url) { super(url); c.sockets.push(this); } }
+  const on = Object.fromEntries(['code', 'waiting', 'error', 'closed', 'paired'].map((k) => [k, (v) => { c[k] = v ?? true; }]));
+  return Object.assign(c, meet({ url: `ws://127.0.0.1:${port}`, key: KEY, ask, on, Socket, againMs: 150, waitMs }), { cut: () => c.sockets.at(-1).close() });
+}
+test('an invite survives a cut connection, and the friend waits for its player', () => withServer({}, async (s) => {
+  const a = phone(s.port, { t: 'create' });
+  await until(() => a.code);
+  const { code } = a.code;
+  a.cut();
+  await until(() => s.counts().clients === 0);
+  const b = client(s.port, { t: 'join', code });
+  const other = client(s.port, { t: 'join', code });
+  await until(() => a.paired && (b.paired || other.paired));
+  assert.equal(a.code.code, code);
+  await until(() => b.error || other.error);
+  assert.equal(s.counts().open, 0);
+}));
+test('a canceled invite is gone, also for a friend who waits', () => withServer({}, async (s) => {
+  const a = phone(s.port, { t: 'create' });
+  await until(() => a.code);
+  a.cancel();
+  await until(() => s.counts().open === 0);
+  const b = client(s.port, { t: 'join', code: a.code.code });
+  await until(() => b.error);
+  assert.equal(b.error.error, 'no_match');
+}));
+test('a friend who leaves makes room for another', () => withServer({}, async (s) => {
+  const a = phone(s.port, { t: 'create' });
+  await until(() => a.code);
+  const { code, back } = a.code;
+  a.sockets[0].onclose = null; a.sockets[0].close();     // it never comes back by itself
+  await until(() => s.counts().clients === 0);
+  const b = phone(s.port, { t: 'join', code });
+  await until(() => b.waiting);
+  b.cancel();
+  await until(() => s.counts().clients === 0);
+  const c = phone(s.port, { t: 'join', code });
+  await until(() => c.waiting);
+  const again = phone(s.port, { t: 'create', back });
+  await until(() => again.paired && c.paired);
+}));
+test('nobody takes an invite without its secret, and a held invite ends', () => withServer({ waitMs: 1500 }, async (s) => {
+  const a = phone(s.port, { t: 'create' });
+  await until(() => a.code);
+  const thief = phone(s.port, { t: 'create', back: `${a.code.code}.00000000-0000-4000-8000-000000000000` });
+  await until(() => thief.closed);
+  assert.equal(thief.closed, 'expired');
+  thief.cancel();
+  a.sockets[0].onclose = null; a.sockets[0].close();
+  await until(() => s.counts().clients === 0);           // before that the server still sees its player
+  const b = phone(s.port, { t: 'join', code: a.code.code });
+  await until(() => b.closed);
+  assert.equal(b.closed, 'expired');
+  assert.equal(s.counts().open, 0);
+}));
+test('one address cannot hold invites without end', () => withServer({ invitesPerAddress: 2 }, async (s) => {
+  for (let i = 0; i < 2; i++) {
+    const p = phone(s.port, { t: 'create' });
+    await until(() => p.code);
+    p.sockets[0].onclose = null; p.sockets[0].close();
+  }
+  await until(() => s.counts().clients === 0);
+  const last = phone(s.port, { t: 'create' });
+  await until(() => last.error);
+  assert.equal(last.error.error, 'too_many');
+}));
+test('no shape of message stops the server', () => withServer({}, async (s) => {
+  const back = 'AAAAAAAA.00000000-0000-0000-0000-000000000000';
+  const bad = [[back], { x: 1 }, 1, true].flatMap((v) => ['create', 'join', 'find', 'leave', 'signal', 'relay'].flatMap((t) => [{ t, key: KEY, back: v, code: v, pub: v }, { t, key: [KEY], back, pub: [KEY] }]));
+  for (const msg of [...bad, null, [], 1, 'x', { t: ['create'], key: KEY }]) {
+    const ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
+    await new Promise((r) => { ws.onopen = r; ws.onerror = r; });
+    if (ws.readyState === 1) ws.send(JSON.stringify(msg));
+    ws.close();
+  }
+  const a = client(s.port, { t: 'create' });
+  await until(() => a.code || a.closed || a.error);
+  assert.ok(a.code || a.closed);
+  assert.deepEqual(await (await fetch(`http://127.0.0.1:${s.port}/health`)).json(), { ok: true });
+}));
+test('an app that does not come back loses its invite at once', () => withServer({}, async (s) => {
+  const ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'create', key: KEY }));
+  await until(() => s.counts().open === 1);
+  ws.close();
+  await until(() => s.counts().open === 0);
+}));
+test('an invite canceled while the connection is cut is gone too', () => withServer({}, async (s) => {
+  const a = phone(s.port, { t: 'create' });
+  await until(() => a.code);
+  a.cut();
+  await until(() => s.counts().clients === 0);
+  assert.equal(s.counts().open, 1);
+  a.cancel();
+  await until(() => s.counts().open === 0);
+}));

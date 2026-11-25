@@ -1,7 +1,8 @@
-import { app, BrowserWindow, WebContentsView, dialog, ipcMain, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, net, protocol, session, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { inviteText, whatsappUrl } from './invite.js';
 import { TYPES, readKit, readLibrary, resolveFile } from './library.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
@@ -141,6 +142,16 @@ async function openLink({ id, kind } = {}) {
   } finally { asking = false; }
 }
 shellCall('link', openLink);
+/* Copies an invite, or opens it in WhatsApp, where the player picks the friend and sends it. */
+shellCall('invite', async ({ id, code, how } = {}) => {
+  const game = games.find((g) => g.id === id);
+  if (!game) throw new Error('unknown game');
+  const text = inviteText({ game, code, server: SERVER });
+  if (how === 'code') clipboard.writeText(code);
+  else if (how === 'message') clipboard.writeText(text);
+  else if (how === 'whatsapp') await shell.openExternal(whatsappUrl(text));
+  else throw new Error('unknown way to invite');
+});
 /* Leaderboards live on the match server. The window itself never opens a web address. */
 const HTTP = SERVER.replace(/^ws/, 'http'), ASK_MS = 15_000, RESULT_MS = 60_000, MAX_RESULT = 4 * 1024 * 1024;
 async function ask(where, init = {}, ms = ASK_MS) {

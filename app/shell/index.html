@@ -63,10 +63,23 @@
   </div>
 </main>
 
+<main id="invited" hidden>
+  <h1 id="invitedTitle" tabindex="-1">Join the match?</h1>
+  <p id="invitedText"></p>
+  <p class="small">Join only if you know who sent the link. With a direct connection the other player can see your internet address.</p>
+  <div class="row"><button type="button" class="go" id="invitedYes">Join</button><button type="button" id="invitedNo">Not now</button></div>
+</main>
+
 <main id="wait" hidden>
   <h1 id="waitTitle" tabindex="-1"></h1>
   <p id="waitText"></p>
   <p id="code" class="code" hidden></p>
+  <div id="share" class="row" hidden>
+    <button type="button" class="go" data-how="whatsapp">Send on WhatsApp</button>
+    <button type="button" data-how="message">Copy invite</button>
+    <button type="button" data-how="code">Copy code</button>
+  </div>
+  <p id="shared" role="status"></p>
   <button id="cancel" type="button">Cancel</button>
 </main>
 

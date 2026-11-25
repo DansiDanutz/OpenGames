@@ -9,6 +9,7 @@ COPY app ./app
 COPY games ./games
 COPY kit ./kit
 COPY server ./server
+COPY web ./web
 RUN mkdir /data && chown node:node /data
 USER node
 ENV HOST=0.0.0.0 PORT=4310 DATA_DIR=/data STUN_PORT=3478 TRUST_PROXY=1

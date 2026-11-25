@@ -41,10 +41,11 @@ button:disabled{opacity:.5;cursor:default}
 .prefs{color:var(--soft);font-size:14px}
 .check{display:flex;align-items:center;gap:10px;min-height:44px;color:var(--ink);font-size:16px}
 .check input{width:20px;height:20px;accent-color:var(--go)}
-#wait{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
-#wait h1{font:700 clamp(32px,6vw,52px)/1.05 var(--display);outline:none}
-#wait p{color:var(--soft);max-width:44ch}
+#wait,#invited{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
+#wait h1,#invited h1{font:700 clamp(32px,6vw,52px)/1.05 var(--display);outline:none}
+#wait p,#invited p{color:var(--soft);max-width:44ch}
 #wait .code{font:700 clamp(40px,11vw,80px)/1 var(--display);letter-spacing:.12em;color:var(--go);user-select:all}
+#share{justify-content:center}#shared{min-height:1.5em}
 body[data-screen=match] .top{display:none}
 #match{display:flex;flex-direction:column}
 .bar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px;padding:12px 20px 4px}
