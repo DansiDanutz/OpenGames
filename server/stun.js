@@ -13,7 +13,20 @@ const v6Bytes = (ip) => {
   const all = tail === undefined ? left : [...left, ...Array(8 - left.length - right.length).fill(0), ...right];
   return Buffer.from(all.flatMap((x) => [x >> 8, x & 255]));
 };
-export function bindingAnswer(message, { address, port }) {
+const plain = (ip) => /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)?.[1] ?? ip;
+/* So many answers a second to one address. When too many addresses ask, the newest are answered
+   without being counted: forged ones must not keep a player waiting. */
+export function createAllowance(maxAddresses = MAX_ADDRESSES) {
+  let second = 0, used = new Map();
+  return (address, now) => {
+    if (now !== second) { second = now; used = new Map(); }
+    const n = (used.get(address) ?? 0) + 1;
+    if (n > 1 || used.size < maxAddresses) used.set(address, n);
+    return n <= PER_SECOND;
+  };
+}
+export function bindingAnswer(message, { address: from, port }) {
+  const address = plain(from);
   if (message.length < HEADER || message.readUInt16BE(0) !== REQUEST || message.readUInt32BE(4) !== COOKIE || message.readUInt16BE(2) !== message.length - HEADER) return null;
   const isV4 = isIPv4(address), ip = isV4 ? Buffer.from(address.split('.').map(Number)) : v6Bytes(address);
   const mask = message.subarray(4, HEADER), body = Buffer.alloc(8 + ip.length), head = Buffer.alloc(HEADER);
@@ -27,13 +40,9 @@ export function bindingAnswer(message, { address, port }) {
 }
 export function startStun({ port = 3478, host = '0.0.0.0' } = {}) {
   const socket = createSocket(host.includes(':') ? 'udp6' : 'udp4');
-  let second = 0, used = new Map();
+  const allow = createAllowance();
   socket.on('message', (message, from) => {
-    const now = Math.floor(Date.now() / 1000);
-    if (now !== second) { second = now; used = new Map(); }
-    const n = (used.get(from.address) ?? 0) + 1;
-    if (n > PER_SECOND || used.size > MAX_ADDRESSES) return;
-    used.set(from.address, n);
+    if (!allow(from.address, Math.floor(Date.now() / 1000))) return;
     const answer = bindingAnswer(message, from);
     if (answer) socket.send(answer, from.port, from.address, () => {});
   });

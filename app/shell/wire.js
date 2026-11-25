@@ -52,7 +52,7 @@ export function meet({ url, key, ask, on, Socket = globalThis.WebSocket }) {
     else if (msg.t === 'paired' && !paired) {
       paired = true;
       peer = { signal: () => {}, relay: () => {}, lost: () => {} };
-      on.paired({ host: msg.host === true, ticket: typeof msg.ticket === 'string' ? msg.ticket : null, peer, send, close: () => { ended = true; ws.close(); } });
+      on.paired({ host: msg.host === true, ticket: typeof msg.ticket === 'string' ? msg.ticket : null, theirPub: typeof msg.pub === 'string' ? msg.pub : null, peer, send, close: () => { ended = true; ws.close(); } });
     } else if (msg.t === 'signal') peer?.signal(msg.data);
     else if (msg.t === 'relay') peer?.relay(msg.data);
     else if (msg.t === 'gone') peer?.lost();

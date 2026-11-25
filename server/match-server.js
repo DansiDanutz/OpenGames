@@ -9,8 +9,9 @@ import { createTickets, answerHttp } from './http.js';
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LIMITS = { maxBytes: 26 * 1024, perSecond: 80, bytesPerSecond: 64 * 1024, buffered: 256 * 1024, perAddress: 20, opensPerMinute: 60,
   waitMs: 10 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, pingMs: 30 * 1000, minuteMs: 60 * 1000,
-  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120 };
+  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, findsPerMinute: 12, bodyMs: 8000 };
 const CODE_LENGTH = 8;
+const PUB = /^[0-9a-f]{64}$/;
 const KEY = /^[a-z0-9-]{1,40}@[0-9a-f]{64}$/;         // game@hash: only equal versions meet
 
 /* One home is one address: the first half of an IPv6 address, or the IPv4 address. */
@@ -41,8 +42,8 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   const addressOf = (req) => addressKey((proxies > 0 && String(req.headers['x-forwarded-for'] || '').split(',').at(-proxies)?.trim()) || req.socket.remoteAddress);
   const seen = (address) => {
     const now = Date.now(), old = addresses.get(address);
-    const a = old ?? { count: 0, opens: 0, tries: 0, results: 0, reads: 0, since: now };
-    if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, results: 0, reads: 0, since: now });
+    const a = old ?? { count: 0, opens: 0, tries: 0, results: 0, reads: 0, finds: 0, since: now };
+    if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, results: 0, reads: 0, finds: 0, since: now });
     addresses.set(address, a);
     return a;
   };
@@ -65,15 +66,23 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   }
   function pair(host, guest, key) {
     stopWaiting(host); stopWaiting(guest);
-    const ticket = randomUUID(), canRank = !!leaderboard && (L.rankSameAddress || host.og.address !== guest.og.address);
-    if (canRank) tickets.add(ticket, key);
+    const ticket = randomUUID(), pubs = [host.og.pub, guest.og.pub];
+    const canRank = !!leaderboard && pubs.every((p) => p) && pubs[0] !== pubs[1] && (L.rankSameAddress || host.og.address !== guest.og.address);
+    if (canRank) tickets.add(ticket, { key, pubs });
     host.og.peer = guest; guest.og.peer = host;
     const timer = setTimeout(() => { host.terminate(); guest.terminate(); }, L.pairMs);
     timer.unref();
     host.og.timer = guest.og.timer = timer;
-    tell(host, { t: 'paired', host: true, ticket: canRank ? ticket : null });
-    tell(guest, { t: 'paired', host: false, ticket: canRank ? ticket : null });
+    tell(host, { t: 'paired', host: true, ticket: canRank ? ticket : null, pub: canRank ? pubs[1] : null });
+    tell(guest, { t: 'paired', host: false, ticket: canRank ? ticket : null, pub: canRank ? pubs[0] : null });
   }
+  /* Nobody may meet everyone who looks for a player: an address meets only so many a minute. */
+  const isOften = (ws) => {
+    if (seen(ws.og.address).finds < L.findsPerMinute) return false;
+    stopWaiting(ws);
+    tell(ws, { t: 'error', error: 'too_many' });
+    return true;
+  };
   const busy = (ws) => ws.og.peer || ws.og.code || ws.og.queue;
 
   const actions = {
@@ -95,8 +104,12 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     },
     find(ws, msg) {
       if (busy(ws) || !KEY.test(msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
+      if (isOften(ws)) return undefined;
       const other = queues.get(msg.key);
-      if (other) return pair(other, ws, msg.key);
+      if (other && !isOften(other)) {
+        for (const address of new Set([ws.og.address, other.og.address])) seen(address).finds += 1;
+        return pair(other, ws, msg.key);
+      }
       ws.og.queue = msg.key; queues.set(msg.key, ws); wait(ws);
       return tell(ws, { t: 'searching' });
     },
@@ -110,7 +123,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     const address = addressOf(req), from = seen(address);
     if (from.count >= L.perAddress || ++from.opens > L.opensPerMinute || from.tries >= L.joinTries) { ws.terminate(); return; }
     from.count++;
-    ws.og = { address, peer: null, code: null, queue: null, key: null, timer: null, alive: true };
+    ws.og = { address, pub: null, peer: null, code: null, queue: null, key: null, timer: null, alive: true };
     ws.og.quiet = setTimeout(() => ws.terminate(), L.quietMs);   // somebody who only connects is not a player
     ws.og.quiet.unref();
     let second = 0, used = 0, bytes = 0;
@@ -123,6 +136,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       let msg;
       try { msg = JSON.parse(raw); } catch { ws.close(1007); return; }
       clearTimeout(ws.og.quiet);
+      if (msg && PUB.test(msg.pub) && !ws.og.pub) ws.og.pub = msg.pub;       // whose ranked match this will be
       if (msg && Object.hasOwn(actions, msg.t)) actions[msg.t](ws, msg);
     });
     ws.on('close', () => {

@@ -169,3 +169,17 @@ test('a host cannot open several connections or claim a direct one that does not
   await assert.rejects(hidden.out, /left/);
   assert.equal(made.length, 1);
 });
+test('one address cannot meet everybody who is looking for a player', () => withServer({ findsPerMinute: 2 }, async (s) => {
+  for (let i = 0; i < 2; i++) {
+    const a = client(s.port, { t: 'find' });
+    await until(() => a.searching);
+    const b = client(s.port, { t: 'find' });
+    await until(() => a.paired && b.paired);
+    a.cancel(); b.cancel();
+  }
+  const more = client(s.port, { t: 'find' });
+  await until(() => more.error);
+  assert.equal(more.error.error, 'too_many');
+  const friend = client(s.port, { t: 'create' });
+  await until(() => friend.code);
+}));

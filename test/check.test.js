@@ -75,3 +75,7 @@ test('library.lock.json approves exactly the games that are here', () => {
   const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'library.lock.json')));
   for (const id of fs.readdirSync(path.join(ROOT, 'games'))) assert.equal(lock[id], hashGame(path.join(ROOT, 'games', id)), id);
 });
+test('rules cannot skip the matches of the check', (t) => {
+  const { dir } = hostile(t, () => 'Array.prototype.reduce = () => [];');
+  assert.throws(() => checkGame(dir), /did not play|read only|Cannot assign/);
+});

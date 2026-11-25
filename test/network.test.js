@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import dgram from 'node:dgram';
 import { cleanDescription, isPlayerAddress } from '../app/shell/wire.js';
-import { bindingAnswer, startStun } from '../server/stun.js';
+import { bindingAnswer, createAllowance, startStun } from '../server/stun.js';
 import { startMatchServer } from '../server/match-server.js';
 import { until } from './helpers.js';
 
@@ -53,4 +53,17 @@ test('leaving cannot lift the time limit of a pair', async () => {
 test('somebody who connects and says nothing is cut off', async () => {
   const s = await startMatchServer({ limits: { quietMs: 60 } }), log = [];
   try { await connect(s, log); await until(() => log.includes('closed')); } finally { await s.close(); }
+});
+test('STUN still answers players while many addresses ask', () => {
+  const allow = createAllowance(1000);
+  for (let i = 0; i < 20_000; i++) allow(`10.${i >> 16}.${(i >> 8) & 255}.${i & 255}`, 1000);
+  assert.equal(allow('203.0.113.7', 1000), true);
+  for (let i = 0; i < 40; i++) allow('10.0.0.1', 2000);
+  assert.equal(allow('10.0.0.1', 2000), false);
+  assert.equal(allow('203.0.113.7', 2000), true);
+});
+test('STUN gives an IPv4 address written as IPv6 as IPv4', () => {
+  const answer = bindingAnswer(request(), { address: '::ffff:192.0.2.5', port: 9 });
+  assert.equal(answer.length, 32);
+  assert.deepEqual([...answer.subarray(28, 32)].map((b, i) => b ^ [0x21, 0x12, 0xa4, 0x42][i]), [192, 0, 2, 5]);
 });

@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { Series } from '../kit/engine.js';
 import * as shikaku from '../games/shikaku/rules.js';
 import { Session, cleanName, createIdentity, verifyTranscript } from '../app/shell/session.js';
-import { GAME, pair, solution, tableFor, until, wires } from './helpers.js';
+import { GAME, pair, solution, tableFor, until, wires, inRound } from './helpers.js';
 
 const referee = (t) => verifyTranscript(t, (seed, terms) => new Series(shikaku, { seed, terms }));
 
+const TICKET = '01234567-89ab-cdef-0123-456789000000';
 test('two players get the same board, and both learn the result', async () => {
   const { host, guest } = await pair();
   assert.deepEqual(host.table.view().puzzle, guest.table.view().puzzle);
@@ -153,4 +154,20 @@ test('names carry no markup', () => {
   assert.equal(cleanName('<img src=x onerror="a()">'), 'img src=x onerror= a()');
   assert.equal(cleanName("O'Neil\u202e"), 'O’Neil');
   assert.equal(cleanName('<>'), 'Player');
+});
+test('a host cannot swell the record of a match', async () => {
+  const extra = await pair({ tamper: (m) => (m.t === 'entry' ? { ...m, entry: { ...m.entry, junk: 'x'.repeat(20_000) } } : m) });
+  await extra.host.session.play(inRound(extra.host, { type: 'cover', cells: 3 }));
+  await until(() => extra.guest.session.transcript().entries.length === 1);
+  assert.ok(JSON.stringify(extra.guest.session.transcript()).length < 3000);
+  const big = await pair();
+  await big.host.session.play(inRound(big.host, { type: 'cover', cells: 3, junk: 'x'.repeat(20_000) }));
+  assert.equal(big.host.session.transcript().entries.length, 0);
+  assert.equal(big.host.table.refusals.length, 1);
+  await big.guest.session.play(inRound(big.guest, { type: 'cover', cells: 3, junk: 'x'.repeat(20_000) }));
+  assert.equal(big.guest.table.refusals.length, 1);
+});
+test('in a ranked match the other player is the one the server named', async () => {
+  assert.equal((await pair({ ticket: TICKET, namedPub: 'right' })).guest.failed, null);
+  assert.match((await pair({ ticket: TICKET, namedPub: 'c'.repeat(64) })).guest.failed, /not the player/);
 });

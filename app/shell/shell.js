@@ -10,6 +10,7 @@ const TEXT = {
   offline: 'The match server cannot be reached. Check your internet connection and try again.',
   expired: 'Nobody joined in time. Please try again.',
   no_match: 'There is no open match with that code, or your friend has a different version of the game.',
+  too_many: 'You met many players in a short time. Please wait a minute and try again.',
   bad_request: 'The match server did not accept that. Please try again.',
 };
 const SCREENS = ['library', 'setup', 'terms', 'board', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000;
@@ -115,13 +116,15 @@ async function showLeaderboard(game) {
   }
 }
 $('boardBack').onclick = () => screen('library');
-function begin(game, ask, terms = {}) {
+async function begin(game, ask, terms = {}) {
   if (current) return;
   const mine = { game, terms };
   current = mine;
   const still = () => current === mine;
   waiting('Connecting', game.name);
-  mine.meeting = meet({ url: server, key: `${game.id}@${game.hash}`, ask, on: {
+  const { pub } = await identity();
+  if (!still()) return;
+  mine.meeting = meet({ url: server, key: `${game.id}@${game.hash}`, ask: { ...ask, pub }, on: {
     code: ({ code }) => still() && waiting('Send this code to your friend', `They open ${game.name} in OpenGames and type it.`, code),
     searching: () => still() && waiting('Looking for a player', `The match starts when somebody else wants to play ${game.name}.`),
     error: ({ error }) => still() && leave(TEXT[error] ?? TEXT.bad_request),
@@ -148,7 +151,7 @@ async function play(mine, met, still) {
   if (!still()) return;
   const terms = { ...mine.terms, ranked: !!mine.terms.ranked && !!met.ticket };
   if (met.host) $('status').textContent = 'Waiting for the other player to accept your rules';
-  mine.session = new Session({ wire, terms, ticket: met.ticket, sound: settings.sound, table: mine.table, identity: me, host: met.host, game: mine.game, name: settings.name || 'Player', on: {
+  mine.session = new Session({ wire, terms, ticket: met.ticket, theirPub: met.theirPub, sound: settings.sound, table: mine.table, identity: me, host: met.host, game: mine.game, name: settings.name || 'Player', on: {
     terms: (offer) => review(mine, offer),
     started: ({ me: seat, players, terms: agreed }) => {
       if (!still()) return;

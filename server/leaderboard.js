@@ -47,10 +47,11 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
   let waiting = 0, chain = Promise.resolve();
 
   /* Why this is not a ranked match of this ticket, or '' when it is. */
-  function problem(t, ticket, key) {
+  function problem(t, { ticket, key, pubs }) {
     const game = library.find((g) => g.id === t?.game && g.hash === t?.hash);
     if (!game || `${game.id}@${game.hash}` !== key) return 'not a game of this server';
     if (!Array.isArray(t.players) || t.players.length !== 2 || !t.players.every((p) => isHex64(p?.pub) && cleanName(p.name) === p.name) || t.players[0].pub === t.players[1].pub) return 'not two players';
+    if (pubs?.length !== 2 || !t.players.every((p) => pubs.includes(p.pub))) return 'not the players this server introduced';
     if (!isHex64(t.seed) || !isHex64(t.match) || !Array.isArray(t.entries) || t.entries.length > MAX_ENTRIES) return 'not a match';
     try { if (canonical(cleanTerms(game.options, t.terms)) !== canonical(t.terms)) return 'the rules are not well formed'; } catch { return 'the rules are not well formed'; }
     return t.terms.ranked && t.terms.ticket === ticket ? '' : 'the players did not agree on a ranked match';
@@ -70,8 +71,8 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     [[a, points, won], [b, -points, 1 - won]].forEach(([p, change, score]) => q.result.run(change, +(score === 1), +(score === 0), +(score === 0.5), t.game, p.pub));
     return { ok: true, finished: true, counted: true, points: [points, -points] };
   }
-  async function judge({ transcript, ticket, key }) {
-    const wrong = problem(transcript, ticket, key);
+  async function judge({ transcript, ticket, key, pubs }) {
+    const wrong = problem(transcript, { ticket, key, pubs });
     if (wrong) return { ok: false, error: wrong };
     const game = library.find((g) => g.id === transcript.game);
     const verdict = await referee(transcript, game.rulesPath, L.refereeMs);

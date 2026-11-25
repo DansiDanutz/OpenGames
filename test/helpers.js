@@ -27,14 +27,16 @@ export function wires({ tamper = (m) => m } = {}) {
   a.send = carry(b, tamper); b.send = carry(a, (m) => m);
   return [a, b];
 }
-export async function pair({ tamper, guestRules = shikaku, hostRules = shikaku, game = GAME, guestGame = game, lateGuest = false, terms = {}, ticket = null, onTerms = () => true, identities = [] } = {}) {
+export async function pair({ tamper, guestRules = shikaku, hostRules = shikaku, game = GAME, guestGame = game, lateGuest = false, terms = {}, ticket = null, onTerms = () => true, identities = [], namedPub = null } = {}) {
+  const people = [identities[0] ?? await createIdentity(), identities[1] ?? await createIdentity()];
   const [wa, wb] = wires({ tamper });
   const side = async (wire, host, rules, game) => {
     const s = { table: tableFor(rules), failed: null, over: null, wire };
     let began;
     s.began = new Promise((r) => { began = r; });
-    s.identity = identities[host ? 0 : 1] ?? await createIdentity();
-    s.session = new Session({ wire, table: s.table, identity: s.identity, host, game, terms, ticket, name: host ? 'Ann' : 'Bob',
+    s.identity = people[host ? 0 : 1];
+    const theirPub = namedPub === 'right' ? people[host ? 1 : 0].pub : namedPub;
+    s.session = new Session({ wire, table: s.table, identity: s.identity, host, game, terms, ticket, theirPub, name: host ? 'Ann' : 'Bob',
       on: { terms: onTerms, started: began, failed: (r) => { s.failed = r; began(); }, over: (o) => { s.over = o; } } });
     return s;
   };

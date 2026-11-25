@@ -26,7 +26,7 @@ The player who starts a match chooses the rules: the board, easy or hard, heads-
 4. Every move is signed by its player and checked by the game's rules on both computers. The rules the players agreed on are part of what they sign. The moves form a signed chain, so a referee can replay the match.
 5. In a best of three or five the players change seats after every game.
 
-**Leaderboards.** Each game has one. After a ranked match the signed moves go to the match server, which replays the whole match before it moves any points (Elo, from 1200). Two players can rank against each other five times a day, and not from the same internet address. Players who leave more than one match in five are not shown.
+**Leaderboards.** Each game has one. After a ranked match the signed moves go to the match server, which replays the whole match before it moves any points (Elo, from 1200). It accepts only the two players it introduced. Two players can rank against each other five times a day, and not from the same internet address. Players who leave more than one match in five are not shown.
 
 ## Make a game
 A game is a folder with `game.json`, `rules.js`, an icon and a page. Copy `games/shikaku` to start. Games are two-player only.
@@ -57,6 +57,8 @@ The server is built in. The packed app checks its own files, cannot be run as pl
 - **Hidden cards:** both computers know the whole position, so a cheater can look at secret hands. A game can avoid this as Avioane & Bărcuțe does: each fleet stays on its own computer under a seal and is checked at the end. A player who will not answer or show the fleet can only end the match without a result.
 - **Computer help:** a program can solve a puzzle for a player. That is one reason nothing of value can be won.
 - **The host** puts moves in order, so it has a small advantage when both finish at almost the same moment, and it can ignore the other player's moves. Neither computer can prove that.
+- **Choosing a board by leaving:** the host learns the board a moment before the guest does. A changed host could leave before the first move until it likes the board; that is not counted against it. The server only limits how many players one address meets in a minute.
+- **Matchmaking:** somebody with many addresses can still get in the way of random matches. Invite codes are not affected.
 - **Leaving:** a lost connection costs nobody points. It is counted for both players of a ranked match, because the server cannot know who left.
 - **Several computers:** somebody with two internet connections can play against themselves. The daily limit and the rating keep that slow, not impossible.
 - **Gemhold 5 × 5 and 6 × 6, hard:** the player who goes second wins about 60% of bot matches. Seats change in a best of three or five.

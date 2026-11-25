@@ -29,6 +29,8 @@ async function verified(pub, sig, value) {
 }
 const signedMove = (match, player, n, move) => ({ match, player, n, move });
 const signedEntry = (e) => ({ seq: e.seq, prev: e.prev, player: e.player, n: e.n, move: e.move, sig: e.sig, fingerprint: e.fingerprint });
+const MAX_MOVE_BYTES = 1400;           // so that a whole match always fits what the server takes
+const isSmall = (move) => enc.encode(JSON.stringify(move) ?? '').length <= MAX_MOVE_BYTES;
 const MAX_WAITING = 128, MAX_ENTRIES = 2000, MAX_PROPOSALS_PER_SECOND = 40, HANDSHAKE_MS = 15000, TERMS_MS = 120000;
 
 /* table: what the game's page gives us
@@ -41,10 +43,10 @@ export class Session {
   #wire; #table; #on; #identity; #host; #game;
   #me; #them; #name; #secret; #commit; #match; #head; #seq = 0; #sentN = 0; #seenN = [0, 0];
   #queue = Promise.resolve(); #inbox = Promise.resolve(); #waiting = 0; #closed = false; #over = false; #log = [];
-  #sending = Promise.resolve(); #handshakeMs; #termsMs; #terms = null; #ticket; #sound; #accepted = false; #reviewing = false; #timer = null; #rate = { second: 0, used: 0 };
+  #sending = Promise.resolve(); #handshakeMs; #termsMs; #terms = null; #ticket; #theirPub; #sound; #accepted = false; #reviewing = false; #timer = null; #rate = { second: 0, used: 0 };
 
-  constructor({ wire, table, identity, host, game, name, on, terms = {}, ticket = null, sound = true, handshakeMs = HANDSHAKE_MS, termsMs = TERMS_MS }) {
-    this.#handshakeMs = handshakeMs; this.#termsMs = termsMs; this.#ticket = ticket; this.#sound = sound;
+  constructor({ wire, table, identity, host, game, name, on, terms = {}, ticket = null, theirPub = null, sound = true, handshakeMs = HANDSHAKE_MS, termsMs = TERMS_MS }) {
+    this.#handshakeMs = handshakeMs; this.#termsMs = termsMs; this.#ticket = ticket; this.#theirPub = theirPub; this.#sound = sound;
     if (host) this.#terms = cleanTerms(game.options ?? [], { ...terms, ticket });
     this.#wire = wire; this.#table = table; this.#identity = identity; this.#host = host;
     this.#game = game; this.#name = cleanName(name); this.#on = on;
@@ -89,6 +91,7 @@ export class Session {
   async #send(move) {
     if (this.#closed || this.#over || !this.#match) return;
     canonical(move);
+    if (!isSmall(move)) throw new Error('the move is too large');
     const n = ++this.#sentN;
     const sig = await sign(this.#identity, signedMove(this.#match, this.#me, n, move));
     const proposal = { player: this.#me, n, move, sig };
@@ -122,6 +125,7 @@ export class Session {
     if (!isHex(msg.pub, 64) || !isHex(msg.commit, 64) || msg.pub === this.#identity.pub || msg.commit === this.#commit) {
       return this.#fail('The other computer sent a bad greeting.');
     }
+    if (this.#ticket && this.#theirPub && msg.pub !== this.#theirPub) return this.#fail('This is not the player the server introduced.');
     if (msg.game !== this.#game.id || msg.hash !== this.#game.hash) return this.#fail('The other player has a different version of this game.');
     this.#them = { pub: msg.pub, name: cleanName(msg.name), commit: msg.commit };
     this.#on.opponent?.({ name: this.#them.name, tag: msg.pub.slice(0, 4) });
@@ -176,6 +180,7 @@ export class Session {
     const second = Math.floor(Date.now() / 1000);
     this.#rate = { second, used: this.#rate.second === second ? this.#rate.used + 1 : 1 };
     if (this.#rate.used > MAX_PROPOSALS_PER_SECOND) return this.#fail('The other computer sent too much at once.');
+    if (!isSmall(p.move)) return this.#fail('The other computer sent too much at once.');
     if (!Number.isInteger(p.n) || p.n <= this.#seenN[1]) return this.#fail('The other computer repeated a move.');
     if (!(await verified(this.#them.pub, p.sig, signedMove(this.#match, 1, p.n, p.move)))) return this.#fail('A move was not signed by the other player.');
     this.#seenN[1] = p.n;
@@ -204,7 +209,7 @@ export class Session {
 
   /* Guest only: check everything the host says before believing it. */
   async #entry(e) {
-    if (!e || e.seq !== this.#seq + 1 || e.prev !== this.#head || ![0, 1].includes(e.player) || !Number.isInteger(e.n) || e.n <= this.#seenN[e.player]) {
+    if (!e || e.seq !== this.#seq + 1 || e.prev !== this.#head || ![0, 1].includes(e.player) || !Number.isInteger(e.n) || e.n <= this.#seenN[e.player] || !isSmall(e.move)) {
       return this.#fail('The moves arrived in the wrong order.');
     }
     const author = this.players[e.player].pub;
@@ -215,7 +220,7 @@ export class Session {
     if (!out.ok) return this.#fail(`The other computer made a move the rules do not allow (${out.error}).`);
     if (out.fingerprint !== e.fingerprint) return this.#fail('The two computers disagree about the game.');
     this.#seenN[e.player] = e.n;
-    return this.#accept(e, out);
+    return this.#accept({ ...signedEntry(e), hsig: e.hsig }, out);     // nothing that nobody signed
   }
 
   async #accept(entry, out) {

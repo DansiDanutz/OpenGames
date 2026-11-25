@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
 import path from 'node:path';
 import { createLeaderboard, gain } from '../server/leaderboard.js';
 import { startMatchServer } from '../server/match-server.js';
@@ -9,7 +10,11 @@ import { GAME, pair, solution, inRound, until } from './helpers.js';
 const TICKETS = Array.from({ length: 9 }, (_, i) => `01234567-89ab-cdef-0123-45678900000${i}`);
 const KEY = `${GAME.id}@${GAME.hash}`;
 const library = [{ ...GAME, options: [], rulesPath: path.join(import.meta.dirname, '../games/shikaku/rules.js') }];
-const board = (limits) => createLeaderboard({ file: ':memory:', library, limits });
+/* Unless a test says otherwise, the ticket belongs to the players in the match. */
+function board(limits) {
+  const real = createLeaderboard({ file: ':memory:', library, limits });
+  return { ...real, submit: (r) => real.submit({ pubs: r.transcript?.players?.map?.((p) => p?.pub) ?? [], ...r }) };
+}
 const two = async () => [await createIdentity(), await createIdentity()];
 /* A signed match between two players; `winner` gives nothing when nobody finished. */
 async function played({ identities, ticket = TICKETS[0], winner = 1, ranked = true }) {
@@ -77,7 +82,15 @@ test('the same two players cannot collect points all day', async () => {
 test('a referee that never answers is stopped', async () => {
   const transcript = await played({ identities: await two() });
   const b = createLeaderboard({ file: ':memory:', library, limits: { refereeMs: 1 } });
-  assert.match((await b.submit({ transcript, ticket: TICKETS[0], key: KEY })).error, /too long/);
+  assert.match((await b.submit({ transcript, ticket: TICKETS[0], key: KEY, pubs: transcript.players.map((p) => p.pub) })).error, /too long/);
+});
+test('a ticket belongs to the two players it was given to', async () => {
+  const b = board(), real = await two(), pubs = real.map((x) => x.pub);
+  const decoys = [await played({ identities: await two(), winner: null }), await played({ identities: await two() })];
+  for (const transcript of decoys) assert.match((await b.submit({ transcript, ticket: TICKETS[0], key: KEY, pubs })).error, /not the players/);
+  const out = await b.submit({ transcript: await played({ identities: real }), ticket: TICKETS[0], key: KEY, pubs: pubs.toReversed() });
+  assert.equal(out.counted, true);
+  assert.deepEqual(b.top('shikaku').map((p) => p.unfinished), [0, 0]);
 });
 test('beating a stronger player is worth more', () => {
   assert.deepEqual([gain(1200, 1200, 1), gain(1200, 1600, 1), gain(1600, 1200, 1), gain(1200, 1200, 0.5)], [16, 29, 3, 0]);
@@ -85,21 +98,22 @@ test('beating a stronger player is worth more', () => {
 
 /* ---- over the network */
 const withServer = async (options, run) => { const s = await startMatchServer(options); try { await run(s, `http://127.0.0.1:${s.port}`); } finally { await s.close(); } };
-async function ticketFrom(port) {
-  const open = (ask) => new Promise((resolve) => {
+async function ticketFrom(port, identities) {
+  const open = (ask, pub) => new Promise((resolve) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}`), got = {};
-    ws.onopen = () => ws.send(JSON.stringify({ ...ask, key: KEY }));
-    ws.onmessage = ({ data }) => { const m = JSON.parse(data); if (m.t === 'paired') { got.done({ ticket: m.ticket, ws }); } else resolve({ code: m.code, paired }); };
+    ws.onopen = () => ws.send(JSON.stringify({ ...ask, key: KEY, pub }));
+    ws.onmessage = ({ data }) => { const m = JSON.parse(data); if (m.t === 'paired') { got.done({ ticket: m.ticket, pub: m.pub, ws }); } else resolve({ code: m.code, paired }); };
     const paired = new Promise((r) => { got.done = (x) => { resolve(x); r(x); }; });
   });
-  const first = await open({ t: 'find' }), second = await open({ t: 'find' }), one = await first.paired;
+  const first = await open({ t: 'find' }, identities[0].pub), second = await open({ t: 'find' }, identities[1].pub), one = await first.paired;
   assert.equal(one.ticket, second.ticket);
+  if (one.ticket) assert.deepEqual([one.pub, second.pub], [identities[1].pub, identities[0].pub]);
   return one.ticket;
 }
 test('a result travels to the leaderboard over HTTP, and everybody can read it', async () => {
   const leaderboard = board();
   await withServer({ leaderboard, limits: { rankSameAddress: true } }, async (s, url) => {
-    const ticket = await ticketFrom(s.port), transcript = await played({ identities: await two(), ticket });
+    const identities = await two(), ticket = await ticketFrom(s.port, identities), transcript = await played({ identities, ticket });
     const send = () => fetch(`${url}/result?ticket=${ticket}`, { method: 'POST', body: JSON.stringify(transcript) });
     assert.deepEqual(await (await send()).json(), { ok: true, finished: true, counted: true, points: [-16, 16] });
     const again = await Promise.all([send(), send()]);
@@ -112,7 +126,7 @@ test('a result travels to the leaderboard over HTTP, and everybody can read it',
 test('when both players send their match at once, both hear the outcome and it counts once', async () => {
   const leaderboard = board();
   await withServer({ leaderboard, limits: { rankSameAddress: true } }, async (s, url) => {
-    const ticket = await ticketFrom(s.port), transcript = await played({ identities: await two(), ticket });
+    const identities = await two(), ticket = await ticketFrom(s.port, identities), transcript = await played({ identities, ticket });
     const both = await Promise.all([1, 2].map(() => fetch(`${url}/result?ticket=${ticket}`, { method: 'POST', body: JSON.stringify(transcript) }).then((r) => r.json())));
     assert.deepEqual(both.map((x) => x.points), [[-16, 16], [-16, 16]]);
     assert.equal(leaderboard.top('shikaku')[0].wins, 1);
@@ -121,7 +135,7 @@ test('when both players send their match at once, both hear the outcome and it c
 test('bad requests are refused and cost little', async () => {
   await withServer({ leaderboard: board(), limits: { rankSameAddress: true, resultsPerMinute: 4, readsPerMinute: 3 } }, async (s, url) => {
     assert.equal((await fetch(`${url}/result?ticket=${TICKETS[0]}`, { method: 'POST', body: '{}' })).status, 404);
-    const ticket = await ticketFrom(s.port), send = (body) => fetch(`${url}/result?ticket=${ticket}`, { method: 'POST', body });
+    const ticket = await ticketFrom(s.port, await two()), send = (body) => fetch(`${url}/result?ticket=${ticket}`, { method: 'POST', body });
     assert.equal((await send('{')).status, 400);
     assert.equal((await send('{}')).status, 422);
     assert.equal((await send('x'.repeat(5 * 1024 * 1024)).catch(() => ({ status: 413 }))).status, 413);
@@ -132,5 +146,31 @@ test('bad requests are refused and cost little', async () => {
     assert.equal((await fetch(`${url}/leaderboard?game=a`)).status, 429);
   });
 });
-test('two players in one home cannot rank against each other', () => withServer({ leaderboard: board() }, async (s) => assert.equal(await ticketFrom(s.port), null)));
+test('two players in one home cannot rank against each other', () => withServer({ leaderboard: board() }, async (s) => assert.equal(await ticketFrom(s.port, await two()), null)));
 test('a server without a leaderboard has no results', () => withServer({}, async (s, url) => assert.equal((await fetch(`${url}/leaderboard?game=shikaku`)).status, 404)));
+test('no ticket without two different players', () => withServer({ leaderboard: board(), limits: { rankSameAddress: true } }, async (s) => {
+  const [a] = await two();
+  assert.equal(await ticketFrom(s.port, [a, a]), null);
+  assert.equal(await ticketFrom(s.port, [a, { pub: 'x' }]), null);
+}));
+/* Sends text as it is, without the checks of a real browser. */
+const rawHttp = (port, text) => new Promise((resolve) => {
+  const socket = net.connect(port, '127.0.0.1', () => socket.write(text));
+  let got = '';
+  socket.on('data', (d) => { got += d; }).on('close', () => resolve(got)).on('error', () => resolve(got));
+});
+test('an address that cannot be read does not stop the server', async () => {
+  for (const options of [{}, { leaderboard: board() }]) await withServer(options, async (s, url) => {
+    for (const target of ['//[', '//', 'http://[', '*']) await rawHttp(s.port, `GET ${target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`);
+    assert.match(await rawHttp(s.port, 'GET //[ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'), /^HTTP\/1.1 400/);
+    assert.equal((await fetch(`${url}/health`)).status, 200);
+  });
+});
+test('a result that never finishes arriving does not hold up the other player', () => withServer({ leaderboard: board(), limits: { rankSameAddress: true, bodyMs: 300 } }, async (s, url) => {
+  const identities = await two(), ticket = await ticketFrom(s.port, identities), transcript = await played({ identities, ticket });
+  const held = rawHttp(s.port, `POST /result?ticket=${ticket} HTTP/1.1\r\nHost: x\r\nContent-Length: 9000\r\n\r\n{`);
+  const at = Date.now(), out = await (await fetch(`${url}/result?ticket=${ticket}`, { method: 'POST', body: JSON.stringify(transcript) })).json();
+  assert.equal(out.counted, true);
+  assert.ok(Date.now() - at < 2000);
+  await held;
+}));
