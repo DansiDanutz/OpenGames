@@ -1,0 +1,31 @@
+# For a server where Traefik already owns ports 80 and 443. Traefik needs an HTTPS entry point called
+# "websecure" and a certificate resolver. deploy/install-traefik.sh does all of it.
+name: opengames
+services:
+  server:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    image: "opengames-server:${RELEASE:?set RELEASE}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 200
+    ulimits: { nofile: 65536 }
+    sysctls: { net.core.somaxconn: 4096 }
+    tmpfs: [/tmp]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+    volumes: ["data:/data"]
+    ports: ["3478:3478/udp"]        # STUN goes past the proxy; 4310 is for Traefik only
+    networks: [edge]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: opengames-edge
+      traefik.http.routers.opengames.rule: "Host(`${PLAY_DOMAIN:?set PLAY_DOMAIN}`)"
+      traefik.http.routers.opengames.entrypoints: websecure
+      traefik.http.routers.opengames.tls.certresolver: "${CERT_RESOLVER:-letsencrypt}"
+      traefik.http.services.opengames.loadbalancer.server.port: "4310"
+# A network of its own, so the games cannot reach the other services behind the same Traefik.
+networks: { edge: { name: opengames-edge } }
+volumes: { data: {} }
