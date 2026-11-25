@@ -104,6 +104,9 @@ export function move(state, player, m) {
 }
 export const result = (state) => (state.winner === null ? null : { winner: state.winner, reason: 'solved' });
 export const view = (state) => state;
+/* About as fast as a person: this many milliseconds for each step of the bot, which is 1 to 6 cells. */
+const STEP_MS = [5000, 12500];
+export const pace = (state, player, random) => STEP_MS[0] + Math.floor(random() * (STEP_MS[1] - STEP_MS[0]));
 export function bot(state, player, random) {
   const total = state.puzzle.length ** 2;
   const at = state.covered[player];

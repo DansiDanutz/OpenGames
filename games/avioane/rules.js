@@ -158,20 +158,39 @@ export function move(state, player, m) {
 }
 export const result = (state) => (state.winner === null ? null : { winner: state.winner, reason: state.reason });
 
-/* Only for the automatic check: the bots use fleets and salts that are no secret. */
-const BOT_SALT = '00'.repeat(16);
-const PLANES = [{ kind: 'plane', r: 0, c: 2, dir: 0 }, { kind: 'plane', r: 5, c: 7, dir: 0 }];
-const BOT_FLEETS = {
-  8: [PLANES[0], { kind: 'boat3', r: 5, c: 0, dir: 0 }, { kind: 'boat2', r: 6, c: 0, dir: 0 }, { kind: 'boat2', r: 7, c: 0, dir: 0 }],
-  10: [...PLANES, { kind: 'boat4', r: 9, c: 0, dir: 0 }, { kind: 'boat3', r: 5, c: 0, dir: 0 }, { kind: 'boat2', r: 0, c: 8, dir: 0 }],
-  12: [...PLANES, { kind: 'plane', r: 6, c: 2, dir: 0 }, { kind: 'boat4', r: 11, c: 0, dir: 0 }, { kind: 'boat3', r: 10, c: 8, dir: 0 }, { kind: 'boat3', r: 11, c: 8, dir: 0 }, { kind: 'boat2', r: 0, c: 8, dir: 0 }],
-};
-export function bot(state, player, random) {
-  const BOT_FLEET = BOT_FLEETS[state.n];
-  if (state.phase === 'seal') return state.seals[player] ? null : { type: 'commit', hash: seal(BOT_FLEET, BOT_SALT) };
-  if (state.phase === 'reveal') return state.claim === player ? { type: 'reveal', fleet: BOT_FLEET, salt: BOT_SALT } : null;
-  if (state.shot !== null) return state.turn === player ? null : { type: 'answer', ...answer(state, BOT_FLEET, state.log[player], state.shot) };
-  if (state.turn !== player) return null;
-  const open = state.board[1 - player].flatMap((x, i) => (x === '' ? [i] : []));
-  return { type: 'shoot', cell: open[Math.floor(random() * open.length)] };
+/* ---- the bot. Its fleet and salt are its own notes; of the other fleet it knows only the answers. */
+const HEAD = 1, BODY = 0.25, HIT = 12;                  // a plane falls by its head, and hits point at pieces
+const GUESSES = 0.4;                                    // how often it shoots anywhere on an easy board
+const SHARP = 3;                                        // how much the best cells are preferred
+const hex16 = (random) => Array.from({ length: 32 }, () => Math.floor(random() * 16).toString(16)).join('');
+
+/* For every open cell, how well it fits with every place a piece that still flies could be. */
+function chances({ n }, board, down) {
+  const worth = Array(n * n).fill(0), left = [...FLEETS[n]];
+  for (const p of down) left.splice(left.indexOf(p.kind), 1);
+  for (const kind of left) for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) for (let dir = 0; dir < DIRECTIONS[kind]; dir++) {
+    const at = cellsOf(n, { kind, r, c, dir });
+    if (!at || at.some((i) => board[i] !== '' && board[i] !== 'hit') || (kind === 'plane' && board[at[0]] === 'hit')) continue;
+    const hits = at.filter((i) => board[i] === 'hit').length, weight = 1 + HIT * hits * hits;
+    at.forEach((i, k) => { if (board[i] === '') worth[i] += weight * (kind === 'plane' && k ? BODY : HEAD); });
+  }
+  return worth;
+}
+function aim(state, player, random) {
+  const board = state.board[1 - player], open = board.flatMap((x, i) => (x === '' ? [i] : []));
+  const anywhere = open[Math.floor(random() * open.length)];
+  if (state.level === 'easy' && random() < GUESSES) return anywhere;
+  const worth = chances(state, board, state.down[1 - player]), top = Math.max(...open.map((i) => worth[i]));
+  if (!(top > 0)) return anywhere;
+  let best = anywhere, most = -1;
+  for (const i of open) { const value = (worth[i] / top) ** SHARP + random() * 0.05; if (value > most) { most = value; best = i; } }
+  return best;
+}
+export function bot(state, player, random, own = { notes: {} }) {
+  if (state.phase === 'seal' && !own.notes.fleet) Object.assign(own.notes, { fleet: randomFleet(state.n, random), salt: hex16(random) });
+  const { fleet, salt } = own.notes;
+  if (state.phase === 'seal') return state.seals[player] ? null : { type: 'commit', hash: seal(fleet, salt) };
+  if (state.phase === 'reveal') return state.claim === player ? { type: 'reveal', fleet, salt } : null;
+  if (state.shot !== null) return state.turn === player ? null : { type: 'answer', ...answer(state, fleet, state.log[player], state.shot) };
+  return state.turn === player ? { type: 'shoot', cell: aim(state, player, random) } : null;
 }

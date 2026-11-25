@@ -1,7 +1,7 @@
 {
   "id": "gemhold",
   "name": "Gemhold",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "DansiDanutz",
   "license": "MIT",
   "summary": "Take turns placing blocks on a field of gems. Hold more of two colours than the other player.",

@@ -6,7 +6,10 @@
      move(state, player, move)         -> the next state, or throws when not allowed
      view(state, player)               -> what that player may see (optional)
      result(state)                     -> null, or { winner: 0 | 1 | null }
-     bot(view, player, random)         -> a legal move (used by the automatic check)
+     bot(view, player, random, own)    -> a legal move, or null when it is not that player's turn. It plays
+                                          against a person who is alone, and in the automatic check.
+                                          own is { options, notes }; notes is its memory for one game
+     pace(view, player, random)        -> milliseconds until the bot's next move (optional)
 
    Rules must not use time, Math.random or anything outside their arguments. */
 

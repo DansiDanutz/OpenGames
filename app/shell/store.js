@@ -16,6 +16,8 @@ export const settings = {
 export const lastTerms = (gameId) => read(`terms:${gameId}`, {});
 export const saveTerms = (gameId, terms) => write(`terms:${gameId}`, terms);
 
+/* Matches against the computer are counted apart. */
+export const soloKey = (gameId) => `${gameId}:solo`;
 export function record(gameId) { return read(`record:${gameId}`, { wins: 0, losses: 0, draws: 0 }); }
 export function addResult(gameId, outcome) {
   const r = record(gameId);

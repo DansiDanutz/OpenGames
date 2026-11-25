@@ -1,6 +1,6 @@
 # OpenGames
 
-**No more middleman.** Open-source games for two players, who connect straight to each other.
+**No more middleman.** Open-source games for two players, who connect straight to each other. Or play alone against the computer, also without internet.
 
 Three games in 3D, with sound: Shikaku, Gemhold, and Avioane & Bărcuțe. There are no accounts and no payments. Nothing of value can be won; a place on a leaderboard is all there is.
 
@@ -28,10 +28,13 @@ The player who starts a match chooses the rules: the board, easy or hard, heads-
 
 **Leaderboards.** Each game has one. After a ranked match the signed moves go to the match server, which replays the whole match before it moves any points (Elo, from 1200). It accepts only the two players it introduced. Two players can rank against each other five times a day, and not from the same internet address. Players who leave more than one match in five are not shown.
 
+## Alone
+**Play alone** uses the same boards and rules against the game's own bot. Nothing is sent anywhere, and it is never ranked. The easy bots are careless on purpose. In Shikaku the bot is slowed to about the pace of a person.
+
 ## Make a game
 A game is a folder with `game.json`, `rules.js`, an icon and a page. Copy `games/shikaku` to start. Games are two-player only.
 
-- `rules.js` exports `setup`, `move`, `result`, `bot` and optionally `view`. Rules must give the same answer on every computer: no time, no random numbers of their own, no imports. See `kit/engine.js`.
+- `rules.js` exports `setup`, `move`, `result`, `bot` and optionally `view` and `pace`. `bot` is also the opponent of a person who plays alone; it gets only what a player in its seat may see. Rules must give the same answer on every computer: no time, no random numbers of their own, no imports. See `kit/engine.js`.
 - `game.json` lists `options` (what a host may choose) and `howto` (the rules the other player reads).
 - `kit/board3d.js` draws a 3D board with light, effects and the pointer; `kit/sound.js` makes sound effects; `kit/table.css` is the common look. Keep the keyboard and the text for screen readers working.
 - Treat the other player's name as untrusted text: use `textContent`, never `innerHTML`.
