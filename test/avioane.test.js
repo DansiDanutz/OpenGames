@@ -171,5 +171,5 @@ test('every board has fleets that fit', () => {
   for (const n of Object.keys(av.FLEETS).map(Number)) for (let i = 0; i < 30; i++) assert.ok(av.isFleet(n, av.randomFleet(n, random)));
 });
 test('Avioane passes the automatic check', async () => {
-  assert.equal((await checkGame(new URL('../games/avioane', import.meta.url).pathname)).matches, 36);
+  assert.equal((await checkGame(`${import.meta.dirname}/../games/avioane`)).matches, 36);
 });

@@ -109,5 +109,5 @@ test('no block covers a rock, and nobody owns a rock', () => {
   assert.deepEqual(gemhold.score(v).total, [0, 0]);
 });
 test('Gemhold passes the automatic check', async () => {
-  assert.equal((await checkGame(new URL('../games/gemhold', import.meta.url).pathname)).matches, 48);
+  assert.equal((await checkGame(`${import.meta.dirname}/../games/gemhold`)).matches, 48);
 });
