@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('desk', {
   toGame: (token, msg) => ipcRenderer.invoke('game:send', { token, msg }),
   submitResult: (value) => ipcRenderer.invoke('result', value),
   leaderboard: (game) => ipcRenderer.invoke('leaderboard', game),
+  openLink: (id, kind) => ipcRenderer.invoke('link', { id, kind }),
   onGame: (fn) => ipcRenderer.on('game:message', (_event, { token, msg }) => fn(token, msg)),
   onGameGone: (fn) => ipcRenderer.on('game:gone', () => fn()),
 });

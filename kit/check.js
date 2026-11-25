@@ -6,12 +6,14 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { hashGame, readManifest } from '../app/library.js';
+import { hashGame, readFiles, readManifest } from '../app/library.js';
+import { CREATOR_FILE, readCreator } from '../app/creator.js';
 
 const LIMIT_MS = 120_000, MEMORY_MB = 256, MATCHES = 6;
 const BANNED = [/\bMath\s*\.\s*random\b/, /\bDate\b/, /\bperformance\b/, /\bfetch\b/, /\bimport\s*\(/, /^\s*import\b/m, /\beval\b/, /\bFunction\b/, /\bconstructor\b/, /\bglobalThis\b/, /\bprocess\b/, /\bsetTimeout\b/];
 
 export function checkGame(dir) {
+  readCreator(readFiles(dir).get(CREATOR_FILE));
   const manifest = readManifest(dir), root = fs.realpathSync(dir), file = path.join(root, manifest.rules);
   const source = fs.readFileSync(file, 'utf8');
   const found = BANNED.find((re) => re.test(source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')));
