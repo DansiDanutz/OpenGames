@@ -8,7 +8,7 @@ import { cleanName, verified } from '../app/shell/session.js';
 const MINUTE = 60_000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
 const LIMITS = { codeMs: 10 * MINUTE, ticketMs: 2 * MINUTE, tries: 5, codesPerHour: 3, codesPerDay: 6, mailsPerDay: 90, waiting: 5000, startsPerHour: 6, googlesPerHour: 60, signatures: 50_000, devices: 10, skewMs: 5 * MINUTE };
 /* What a request may say, besides who, when and the signature. */
-const FIELDS = { start: ['email'], finish: ['email', 'code', 'name'], google: [], enter: ['ticket', 'name'], me: [], name: ['name'], leave: [], remove: [] };
+const FIELDS = { start: ['email'], finish: ['email', 'code', 'name'], google: [], enter: ['ticket', 'name'], me: [], name: ['name'], leave: [], remove: [], admin: [] };
 const PUB = /^[0-9a-f]{64}$/;
 /* Simple addresses only: no display names, quotes, spaces or lists. */
 const EMAIL = /^[a-z0-9._+-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
@@ -18,9 +18,11 @@ export const cleanEmail = (v) => {
 };
 const newId = () => randomBytes(32).toString('hex');
 
-/* mail: async ({ to, code }) => void. google: see google.js. Both are optional. host: () => the name this server is asked by. moved: ({ from, to }) joins the points of a device to an account. */
-export function createAccounts({ file, mail = null, google = null, host, limits = {}, clock = Date.now, moved = () => {}, removed = () => {} }) {
+/* mail: async ({ to, code }) => void. google: see google.js. Both are optional. host: () => the name this server is asked by. moved: ({ from, to }) joins the points of a device to an account.
+   admins: the addresses that may read report(), an async function that gives what admin.js makes. */
+export function createAccounts({ file, mail = null, google = null, host, limits = {}, clock = Date.now, moved = () => {}, removed = () => {}, admins = [], report = async () => ({}) }) {
   const L = { ...LIMITS, ...limits };
+  const isAdmin = (email) => admins.includes(email);
   const db = new DatabaseSync(file);
   db.exec(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 3000; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;
     CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, made INTEGER NOT NULL) STRICT;
@@ -35,6 +37,7 @@ export function createAccounts({ file, mail = null, google = null, host, limits 
     drop: db.prepare('DELETE FROM devices WHERE pub = ?'),
     oldest: db.prepare('DELETE FROM devices WHERE account = ? AND pub NOT IN (SELECT pub FROM devices WHERE account = ? ORDER BY added DESC, pub LIMIT ?)'),
     remove: db.prepare('DELETE FROM accounts WHERE id = ?'),
+    count: db.prepare('SELECT count(*) AS n FROM accounts'),
   };
   const secret = randomBytes(32);
   const codes = new Map();                             // email and device -> { mac, until, tries }
@@ -48,7 +51,7 @@ export function createAccounts({ file, mail = null, google = null, host, limits 
   const keyOf = (email, pub) => `${email} ${pub}`;
   const no = (error, status = 400) => ({ status, body: { error } });
   const yes = (body) => ({ status: 200, body });
-  const view = (a) => ({ signedIn: true, id: a.id, email: a.email, name: a.name });
+  const view = (a) => ({ signedIn: true, id: a.id, email: a.email, name: a.name, admin: isAdmin(a.email) });
 
   function sweep(now) {
     for (const [sig, until] of used) { if (until > now) break; used.delete(sig); }   // oldest first
@@ -160,6 +163,16 @@ export function createAccounts({ file, mail = null, google = null, host, limits 
       sent.delete(a.email);
       removed(a.id);
       return yes({ signedIn: false });
+    },
+    /* For the owners of the server only. The address is checked on every request, so taking it out of ADMIN_EMAILS is enough. */
+    async admin(b) {
+      const a = q.byPub.get(b.pub);
+      if (!a) return no('not_signed_in', 401);
+      if (!isAdmin(a.email)) return no('not_admin', 403);
+      try { return yes({ ...(await report()), accounts: q.count.get().n }); } catch (error) {
+        console.error('The admin report failed:', error.message);
+        return no('failed', 500);
+      }
     },
   };
   const OF = { start: mail, finish: mail, google, enter: google };

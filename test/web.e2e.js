@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { chromium, webkit, devices } from 'playwright-core';
 import { readLibrary } from '../app/library.js';
 import { createAccounts } from '../server/accounts.js';
+import { createReport } from '../server/admin.js';
+import { createStats } from '../server/stats.js';
 import { inviteLink } from '../app/shell/invite.js';
 import { createLeaderboard } from '../server/leaderboard.js';
 import { startMatchServer } from '../server/match-server.js';
@@ -14,7 +16,15 @@ const games = readLibrary(path.join(ROOT, 'games'), path.join(ROOT, 'kit'));
 const leaderboard = createLeaderboard({ file: ':memory:', library: games.map((g) => ({ ...g, rulesPath: path.join(g.dir, g.rules) })) });
 const box = [];
 let at = '';
+const stats = createStats({ file: ':memory:', library: games });
+for (const page of ['/', '/', '/play']) stats.visited(page);
+/* What GitHub would say, with a title that must stay text. */
+const github = { facts: async () => ({ github: { repo: 'DansiDanutz/OpenGames', url: 'https://github.com/DansiDanutz/OpenGames', stars: 7, forks: 2, watchers: 1, creatorsRoom: 'https://github.com/DansiDanutz/OpenGames-creators/settings/access',
+  open: [{ number: 14, title: '<img src=x onerror=alert(1)> Neon', author: 'cleo', url: 'https://github.com/DansiDanutz/OpenGames/pull/14', createdAt: '2026-11-24T09:00:00Z', games: ['neon'] }],
+  merged: [{ number: 12, title: 'Shikaku neon', author: 'cleo', url: 'https://github.com/DansiDanutz/OpenGames/pull/12', mergedAt: '2026-11-25T09:00:00Z', invite: true },
+    { number: 11, title: 'Fix', author: 'DansiDanutz', url: 'https://github.com/DansiDanutz/OpenGames/pull/11', mergedAt: '2026-11-24T09:00:00Z', invite: false }] } }) };
 const accounts = createAccounts({ file: ':memory:', host: () => new URL(at).host, mail: async (m) => { box.push(m); },
+  admins: ['ann@example.org'], report: createReport({ games, stats, leaderboard, github }),
   // Google itself is played by the page below.
   google: { begin: () => { const state = crypto.randomUUID(); return { state, verifier: 'v', nonce: 'n', url: `https://accounts.google.com/o/oauth2/v2/auth?state=${state}` }; }, finish: async () => 'bea@gmail.com' } });
 const server = await startMatchServer({ leaderboard, accounts, site: createPlay({ games }), limits: { rankSameAddress: true } });
@@ -118,6 +128,22 @@ try {
   await signIn(ann);
   await ann.reload();
   await ann.waitForSelector('#account:has-text("Account")');
+  // Ann is an admin: the server said so in its signed answer.
+  await ann.click('#account');
+  await ann.click('#adminOpen');
+  await ann.waitForSelector('text=Invite cleo to the Creators room');
+  await shot(ann, 'admin');
+  if (process.env.SHOTS) await ann.screenshot({ path: path.join(process.env.SHOTS, `web-${isWebkit ? 'ios' : 'android'}-admin-full.png`), fullPage: true });
+  assert.equal(await ann.getAttribute('text=Invite cleo to the Creators room', 'href'), 'https://github.com/DansiDanutz/OpenGames-creators/settings/access');
+  assert.equal(await ann.locator('text=Invite DansiDanutz').count(), 0);
+  assert.equal(await ann.locator('#adminBody img').count(), 0);
+  assert.equal(await ann.textContent('#adminBody a[href$="/pull/14"]'), '<img src=x onerror=alert(1)> Neon');
+  const report = await ann.evaluate(() => ({ text: document.getElementById('adminBody').textContent, fits: document.documentElement.scrollWidth <= innerWidth }));
+  assert.ok(report.fits, 'the admin view fits a phone');
+  for (const fact of ['Accounts', 'Ranked players', 'Stars', 'Matches per game', 'Shikaku', 'neon', 'Visits per page', 'Home']) assert.ok(report.text.includes(fact), fact);
+  await ann.click('#adminBack');
+  await ann.waitForSelector('text=Signed in as ann@example.org');
+  await ann.click('#signinBack');
   const other = await open();
   await signIn(other);
   assert.equal(await other.inputValue('#name'), 'Ann');
@@ -135,6 +161,7 @@ try {
   await shot(bea, 'google');
   await bea.click('#googleGo');
   await bea.waitForSelector('text=Signed in as bea@gmail.com');
+  assert.equal(await bea.isVisible('#adminOpen'), false);
   assert.equal(new URL(bea.url()).hash, '');
   await bea.click('#signinBack');
   await bea.waitForSelector('text=Cleo invites you to play');
@@ -260,4 +287,5 @@ try {
   await server.close();
   leaderboard.close();
   accounts.close();
+  stats.close();
 }

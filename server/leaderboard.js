@@ -52,6 +52,7 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     forgetA: db.prepare("UPDATE matches SET a = '' WHERE a = ?"),
     forgetB: db.prepare("UPDATE matches SET b = '' WHERE b = ?"),
     players: db.prepare('SELECT count(*) AS n FROM players WHERE game = ? AND wins + losses + draws > 0'),
+    everyone: db.prepare('SELECT count(DISTINCT pub) AS n FROM players WHERE wins + losses + draws > 0'),
     top: db.prepare(`SELECT pub, name, rating, wins, losses, draws, unfinished FROM players WHERE game = ? AND wins + losses + draws > 0
       AND (wins + losses + draws + unfinished < ? OR wins + losses + draws >= ? * (wins + losses + draws + unfinished)) ORDER BY rating DESC, wins DESC, pub LIMIT ?`),
   };
@@ -137,6 +138,8 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
       db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     },
     players: (game) => q.players.get(game).n,
+    /* People with a ranked result in any game, each once. */
+    everyone: () => q.everyone.get().n,
     close: () => db.close(),
   };
 }

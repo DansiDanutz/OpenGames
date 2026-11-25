@@ -10,12 +10,14 @@ const TEXT = {
   not_sent: 'The code could not be sent. Please try again later.',
   wrong_device: 'Google answered, but to another window. Please sign in again in the browser where you play.',
   not_signed: 'The clock of this device seems wrong. Set it and try again.',
+  not_admin: 'This account is not an admin.',
 };
 const ours = (text) => Object.assign(new Error(text), { isOurs: true });
 const $ = (id) => document.getElementById(id);
 
-/* desk.account(action, body) -> { ok, body }. changed(): the name or the account is another one. */
-export function createAccount({ desk, host, ways, changed, close, beforeGoogle = () => {} }) {
+/* desk.account(action, body) -> { ok, body }. changed(): the name or the account is another one.
+   openAdmin(load): shows the admin view; load() asks the server for it, signed. Only where desk.canAdmin. */
+export function createAccount({ desk, host, ways, changed, close, beforeGoogle = () => {}, openAdmin = () => {} }) {
   let email = '', isBusy = false;
   async function ask(action, extra = {}) {
     const me = await identity(), said = { ...extra, pub: me.pub, at: Date.now() };
@@ -25,7 +27,7 @@ export function createAccount({ desk, host, ways, changed, close, beforeGoogle =
     return body;
   }
   function keep(answer) {
-    account.value = answer.signedIn ? { id: answer.id, email: answer.email } : null;
+    account.value = answer.signedIn ? { id: answer.id, email: answer.email, admin: answer.admin === true } : null;
     if (answer.signedIn) settings.name = answer.name;
     changed();
     draw();
@@ -37,6 +39,7 @@ export function createAccount({ desk, host, ways, changed, close, beforeGoogle =
     $('signinNote').textContent = '';
     $('accountRemove').textContent = 'Delete my account';
     $('account').textContent = account.value ? 'Account' : 'Sign in';
+    $('adminOpen').hidden = !(step === 'in' && account.value?.admin === true && desk.canAdmin === true);
   }
   const run = (fn) => async (event) => {
     event?.preventDefault();
@@ -69,6 +72,7 @@ export function createAccount({ desk, host, ways, changed, close, beforeGoogle =
     $('signinNote').textContent = 'Your account is deleted.';
   });
   $('signinBack').onclick = close;
+  $('adminOpen').onclick = () => openAdmin(() => ask('admin'));
   draw();
   return {
     draw,

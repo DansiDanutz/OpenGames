@@ -158,3 +158,22 @@ test('the server serves the pages beside the leaderboards, within its limits', a
   await s.close();
   leaderboard.close();
 });
+test('the privacy page says that visits are counted, as one number per day', () => {
+  const body = bodyOf(createSite({ games, contact: 'Write to privacy@example.org' }), '/privacy');
+  assert.match(body, /<li>We count visits to each page, as one number per day\.<\/li>/);
+});
+test('the creators page asks for a star, explains each step and the Creators room', () => {
+  const body = bodyOf(createSite({ games }), '/creators');
+  assert.match(body, /<a class="go" href="https:\/\/github\.com\/DansiDanutz\/OpenGames" rel="noopener noreferrer nofollow">Star OpenGames on GitHub<\/a>/);
+  assert.match(body, /Sign in to GitHub/);
+  assert.match(body, /press <b>Star<\/b> at the top right/);
+  assert.match(body, /new players and creators find/);
+  for (const step of ['git clone', 'fork', 'make a game', 'publish my game', 'pull request', 'maintainer reads', 'goes live']) assert.match(body, new RegExp(step), step);
+  assert.match(body, /<h2[^>]*>The Creators room<\/h2>/);
+  assert.match(body, /private room on GitHub/);
+  assert.match(body, /not a promise of money/);
+  assert.doesNotMatch(body, /guarantee|you will earn/i);
+  assert.ok(body.indexOf('Star OpenGames') < body.indexOf('Creator dashboards'));
+  assert.match(createSite({ games })('/creators').headers['content-security-policy'], /default-src 'none'/);
+  assert.doesNotMatch(body, /<script/);
+});
