@@ -44,9 +44,21 @@ function chart(g, days) {
 const tile = (label, value) => `<div><dt>${label}</dt><dd>${number(value)}</dd></div>`;
 const tiles = (lists, total) => `<dl class="tiles">${tile('Today', sum(lists.flatMap((x) => x.slice(-1))))}${tile('Last 7 days', sum(lists.flatMap((x) => x.slice(-7))))}${tile('Last 30 days', sum(lists.flat()))}${tile('All time', total)}</dl>`;
 
-const STEPS = `<ol class="steps"><li><h3>Make it</h3><p>Clone the project and tell your AI coding tool: <b>make a game</b>.</p><pre><code>git clone ${SOURCE}
-cd OpenGames &amp;&amp; pnpm install</code></pre></li><li><h3>Publish it</h3><p>Say <b>publish my game</b>. It is checked and sent on GitHub. A person reads it before anybody plays it.</p></li>
+/* A beginner's way from nothing to a game others play. */
+const STEPS = `<h2>Add your game, step by step</h2><ol class="steps"><li><h3>1. Get the project</h3><p>You need a free GitHub account, Node and an AI coding tool such as Claude Code or Codex. Copy the project to your computer:</p><pre><code>git clone ${SOURCE}
+cd OpenGames &amp;&amp; pnpm install</code></pre><p class="soft">Your own copy on GitHub, a fork, is made for you when you publish.</p></li>
+<li><h3>2. Make it</h3><p>Open the folder in your AI coding tool and say <b>make a game</b>. Tell it your idea in your own words; it asks what it needs to know.</p></li>
+<li><h3>3. Check it</h3><p>Play it alone against the computer, and with a friend: <code>pnpm demo</code> opens two windows. The tool also runs the checks, which play every option with your game's bot.</p></li>
+<li><h3>4. Publish it</h3><p>Say <b>publish my game</b>. It shows you what will be public, then makes your fork and opens a pull request: a request to add your game.</p></li>
+<li><h3>5. A maintainer reads it</h3><p>A person reads every game before anybody plays it, and may ask for changes in the pull request.</p></li>
+<li><h3>6. It goes live</h3><p>Once accepted, your game is in the app for everyone, with its own page to share and your own dashboard.</p></li>
 <li><h3>Grow it</h3><p>Say <b>grow my game</b> to add your own support page, one sponsor line, and posts you can share.</p></li></ol>`;
+
+const STAR = `<section><h2>Star OpenGames on GitHub</h2><p>Stars help new players and creators find OpenGames. It takes a few seconds:</p>
+<ol><li>Sign in to GitHub, or make a free account.</li><li>Open the link below.</li><li>On that page, press <b>Star</b> at the top right.</li></ol>
+<p><a class="go" href="${escape(SOURCE)}" rel="noopener noreferrer nofollow">Star OpenGames on GitHub</a></p></section>`;
+
+const ROOM = `<h2>The Creators room</h2><p>Every creator whose game is accepted is invited to a private room on GitHub. There we plan together how to bring players first, and then how creators and OpenGames can earn together. It is a place to plan, not a promise of money.</p>`;
 
 const home = (games) => page('OpenGames', 'Open-source games for two players, who connect straight to each other.', `<h1>Two players. No middleman.</h1><p class="lead">Open-source games. Play a friend, find a player, or play alone against the computer.</p><p><a class="go" href="/play">Play now</a></p>
 <ul class="games">${games.map((g) => `<li><a href="${gameUrl(g)}">${icon(g, 96)}<span><b>${escape(g.name)}</b><span>${escape(g.summary)}</span><small>about ${g.minutes} minutes</small></span></a></li>`).join('')}</ul>`);
@@ -56,7 +68,7 @@ const gamePage = (g) => page(`${g.name} on OpenGames`, g.summary, `<div class="t
 <p><a class="go" href="/play">Play now</a></p>${g.support ? `<h2>Support the creator</h2><p>${out(g.support, g.support.replace('https://', ''))}</p><p class="soft">This goes to the creator on their own page. OpenGames takes nothing.</p>` : ''}
 ${g.sponsor ? `<aside><small>Sponsor, paid to the creator</small><p><b>${escape(g.sponsor.name)}</b> ${escape(g.sponsor.text)}</p><p>${out(g.sponsor.url, new URL(g.sponsor.url).hostname, ' sponsored')}</p></aside>` : ''}`);
 
-const creators = (games) => page('Creators on OpenGames', 'Make a game, keep everything it earns.', `<h1>Make a game. Keep what it earns.</h1><p class="lead">You need GitHub and an AI coding tool, no account with us. OpenGames takes 0% and never touches your money.</p>${STEPS}
+const creators = (games) => page('Creators on OpenGames', 'Make a game, keep everything it earns.', `<h1>Make a game. Keep what it earns.</h1><p class="lead">You need GitHub and an AI coding tool, no account with us. OpenGames takes 0% and never touches your money.</p>${STAR}${STEPS}${ROOM}
 <h2>Creator dashboards</h2><ul class="names">${[...new Set(games.map((g) => g.author))].sort().map((name) => {
     const n = games.filter((g) => g.author === name).length;
     return `<li><a href="${escape(creatorUrl(name))}">${escape(name)}</a> <span class="soft">${n} ${n === 1 ? 'game' : 'games'}</span></li>`;
@@ -77,7 +89,7 @@ ${games.map((g) => dashboardGame(g, stats, ranked)).join('')}<h2>What you earn</
 }
 
 const privacy = (contact, ways) => page('Privacy on OpenGames', 'What OpenGames keeps and why.', `<h1>Privacy</h1><p class="lead">You can play without an account. This page says what is kept, and why.</p>
-<h2>Without an account</h2><ul><li>Your name, your results and a key are kept on your own device.</li><li>A ranked match keeps the name you chose, a public key and the result on our server, to show the leaderboard.</li><li>We count how often each game is played, as one number per day.</li><li>Your internet address is used to connect you and to stop abuse. It is not written to our database. In a direct match the other player's device sees it; you can turn that off under “Hide my internet address”.</li></ul>
+<h2>Without an account</h2><ul><li>Your name, your results and a key are kept on your own device.</li><li>A ranked match keeps the name you chose, a public key and the result on our server, to show the leaderboard.</li><li>We count how often each game is played, as one number per day.</li><li>We count visits to each page, as one number per day.</li><li>Your internet address is used to connect you and to stop abuse. It is not written to our database. In a direct match the other player's device sees it; you can turn that off under “Hide my internet address”.</li></ul>
 <h2>With an account</h2><ul><li>We keep your email address, the name you chose and the public keys of your devices, so your points follow you. Nothing else.</li><li>We use the address only to sign you in. No newsletters and no advertising.</li>${ways.email ? '<li>Codes are sent by Resend, which receives your address for that.</li>' : ''}${ways.google ? '<li>If you sign in with Google, Google tells us your email address and learns that you use OpenGames. We ask Google for nothing else and keep no access to your Google account.</li>' : ''}<li>It is kept until you delete the account. “Delete my account” in the app removes the address, the devices and your points at once.</li></ul>
 <h2>Ask or complain</h2><p>${escape(contact)}. You can ask what we keep about you, correct it or have it removed, and you can complain to your data protection authority.</p>`);
 const CONTENT = { 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', connection: 'close' };
