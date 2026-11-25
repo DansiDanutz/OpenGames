@@ -43,6 +43,15 @@ test('answers are compressed, and not sent twice', () => {
   const again = play('/kit/three.js', { 'if-none-match': first.headers.etag });
   assert.deepEqual([again.status, again.body], [304, '']);
 });
+test('every page of a game is locked, and its pictures run nothing', () => {
+  const extra = { ...games[0], files: new Map([...games[0].files, ['more.html', Buffer.from('<p>x')], ['deep/x.svg', Buffer.from('<svg/>')]]) };
+  const other = createPlay({ games: [extra] });
+  const page = other(`/table/${extra.id}/more.html`, {}), picture = other(`/table/${extra.id}/deep/x.svg`, {});
+  assert.match(page.body.toString(), /^<script src="\/web\/game\.js">/);
+  assert.match(page.headers['content-security-policy'], /sandbox allow-scripts;.*connect-src 'none'/);
+  assert.match(picture.headers['content-security-policy'], /default-src 'none'.*sandbox$/);
+  assert.doesNotMatch(picture.headers['content-security-policy'], /allow-scripts/);
+});
 test('what locks a game runs before anything of the game, however its page is written', () => {
   for (const html of ['<!DOCTYPE html>\n<HTML><HEAD lang=en><script src=x.js></script>', '<script src=x.js></script>', '']) {
     const page = gamePage(Buffer.from(html));

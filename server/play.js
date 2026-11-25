@@ -9,6 +9,7 @@ import { TYPES, readKit } from '../app/library.js';
 const ROOT = path.join(import.meta.dirname, '..');
 const SHELL_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' HOST; frame-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const GAME_POLICY = "sandbox allow-scripts; default-src 'none'; script-src 'self' HOST; style-src 'self' HOST 'unsafe-inline'; img-src 'self' HOST data:; font-src 'self' HOST; media-src 'self' HOST; connect-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+const FILE_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";   // a picture opened as a page runs nothing
 const MANIFEST = { name: 'OpenGames', short_name: 'OpenGames', description: 'Open-source games for two players.', id: '/play', start_url: '/play', scope: '/', display: 'standalone', background_color: '#100a20', theme_color: '#100a20',
   icons: [192, 512].map((n) => ({ src: `/web/icon-${n}.png`, sizes: `${n}x${n}`, type: 'image/png' })) };
 const HOST = /^[a-z0-9.-]{1,253}(:\d{1,5})?$/i;
@@ -53,10 +54,11 @@ function collect(games, kit, stunPort) {
   for (const f of fs.readdirSync(path.join(ROOT, 'app/shell'))) if (f.endsWith('.js') || f.endsWith('.css')) all.set(`/app/shell/${f}`, asset(f, read(`app/shell/${f}`)));
   for (const [f, data] of kit) all.set(`/kit/${f}`, asset(f, data, null, OPEN));
   for (const g of games) {
-    all.set(`/icons/${g.id}`, asset(g.icon, g.files.get(g.icon), "default-src 'none'; style-src 'unsafe-inline'; sandbox"));
+    all.set(`/icons/${g.id}`, asset(g.icon, g.files.get(g.icon), FILE_POLICY));
     for (const [f, data] of g.files) {
       if (!TYPES[path.extname(f)]) continue;
-      all.set(`/table/${g.id}/${f}`, f === g.page ? asset(f, gamePage(data), GAME_POLICY, OPEN) : asset(f, data, GAME_POLICY, OPEN));
+      const isPage = path.extname(f) === '.html';         // every page a game could go to is locked the same way
+      all.set(`/table/${g.id}/${f}`, isPage ? asset(f, gamePage(data), GAME_POLICY, OPEN) : asset(f, data, FILE_POLICY, OPEN));
     }
   }
   return all;
