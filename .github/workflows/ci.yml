@@ -19,6 +19,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm check
+      - name: Every game is approved
+        run: node tools/approve.js --check
       - name: Pack
         run: node tools/pack.js --server wss://play.example.org --dir
       - name: Packed app (Linux)
