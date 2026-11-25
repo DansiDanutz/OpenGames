@@ -1,13 +1,59 @@
 {
   "id": "avioane",
   "name": "Avioane & Bărcuțe",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": "DansiDanutz",
   "license": "MIT",
   "summary": "The old paper game. Hide two planes and three boats, then find the other player's first.",
-  "players": { "min": 2, "max": 2 },
+  "players": {
+    "min": 2,
+    "max": 2
+  },
   "minutes": 10,
   "page": "index.html",
   "icon": "icon.svg",
-  "rules": "rules.js"
+  "rules": "rules.js",
+  "options": [
+    {
+      "id": "size",
+      "label": "Board",
+      "default": "10",
+      "choices": [
+        {
+          "id": "8",
+          "label": "8 × 8"
+        },
+        {
+          "id": "10",
+          "label": "10 × 10"
+        },
+        {
+          "id": "12",
+          "label": "12 × 12"
+        }
+      ]
+    },
+    {
+      "id": "level",
+      "label": "Difficulty",
+      "default": "easy",
+      "choices": [
+        {
+          "id": "easy",
+          "label": "Easy",
+          "note": "A miss right beside a piece is called near."
+        },
+        {
+          "id": "hard",
+          "label": "Hard",
+          "note": "A miss is only a miss."
+        }
+      ]
+    }
+  ],
+  "howto": [
+    "Hide your planes and boats. Nobody can see them, not even the other computer.",
+    "Take turns shooting. A hit on the head brings a plane down; a boat sinks when every part is hit.",
+    "The first to bring down the whole fleet wins. The winner's fleet is checked at the end."
+  ]
 }

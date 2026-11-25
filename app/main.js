@@ -1,11 +1,13 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, protocol, session } from 'electron';
+import { app, BrowserWindow, WebContentsView, ipcMain, net, protocol, session } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { TYPES, readLibrary, resolveFile } from './library.js';
+import { TYPES, readKit, readLibrary, resolveFile } from './library.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
-const SERVER = process.env.OPENGAMES_SERVER || 'ws://127.0.0.1:4310';
+/* Built into the installer (tools/pack.js); a developer may point at another server. */
+const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'app/config.json'), 'utf8'));
+const SERVER = (!app.isPackaged && process.env.OPENGAMES_SERVER) || config.server;
 const SHELL = 'og://platform/app/shell/index.html';
 const MAX_MESSAGE = 32 * 1024, MAX_PER_SECOND = 200;
 const NO_NETWORK_PROXY = '127.0.0.1:9';                   // nothing listens there
@@ -19,31 +21,35 @@ app.commandLine.appendSwitch('host-resolver-rules', `MAP * ~NOTFOUND, EXCLUDE ${
 const privileges = { standard: true, secure: true, supportFetchAPI: true };
 protocol.registerSchemesAsPrivileged([{ scheme: 'og', privileges }, { scheme: 'og-game', privileges }]);
 
-const games = readLibrary(path.join(ROOT, 'games'), path.join(ROOT, 'kit'));
+const approved = app.isPackaged ? JSON.parse(fs.readFileSync(path.join(ROOT, 'library.lock.json'), 'utf8')) : null;
+const games = readLibrary(path.join(ROOT, 'games'), path.join(ROOT, 'kit'), approved);
+const kit = readKit(path.join(ROOT, 'kit')).files;
 let win = null, gameView = null, gameToken = null, opening = 0;
 
-const answer = (file, csp) => (file
-  ? new Response(fs.readFileSync(file), { headers: { 'content-type': TYPES[path.extname(file)], 'content-security-policy': csp,
+const answer = (data, name, csp) => (data
+  ? new Response(data, { headers: { 'content-type': TYPES[path.extname(name)], 'content-security-policy': csp,
     'x-content-type-options': 'nosniff', 'x-dns-prefetch-control': 'off', 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' } })
   : new Response('Not found', { status: 404 }));
-const kitFile = (p) => resolveFile(path.join(ROOT, 'kit'), p.slice('/kit/'.length));
+/* Games and the kit are answered from memory: what was checked at the start is what runs. */
+const fromMap = (files, name, csp) => answer(files.get(name), name, csp);
+const fromDisk = (file, csp) => answer(file && fs.readFileSync(file), file ?? '', csp);
 
 function serveShell(request) {
   const { host, pathname } = new URL(request.url);
-  if (host !== 'platform') return answer(null);
+  if (host !== 'platform') return answer(null, '', '');
   const game = pathname.startsWith('/icons/') && games.find((g) => g.id === pathname.slice('/icons/'.length));
-  if (game) return answer(resolveFile(game.dir, game.icon), GAME_CSP);
-  if (pathname.startsWith('/kit/')) return answer(kitFile(pathname), SHELL_CSP);
-  if (pathname.startsWith('/app/shell/')) return answer(resolveFile(path.join(ROOT, 'app/shell'), pathname.slice('/app/shell/'.length)), SHELL_CSP);
-  return answer(null);
+  if (game) return fromMap(game.files, game.icon, GAME_CSP);
+  if (pathname.startsWith('/kit/')) return fromMap(kit, pathname.slice('/kit/'.length), SHELL_CSP);
+  if (pathname.startsWith('/app/shell/')) return fromDisk(resolveFile(path.join(ROOT, 'app/shell'), pathname.slice('/app/shell/'.length)), SHELL_CSP);
+  return answer(null, '', '');
 }
 /* A game gets its own empty session with no network, no files and no permissions. */
 function gameSession(game) {
   const ses = session.fromPartition(`game-${game.id}-${randomUUID()}`);
   ses.protocol.handle('og-game', (request) => {
     const { host, pathname } = new URL(request.url);
-    if (host !== game.id) return answer(null);
-    return answer(pathname.startsWith('/kit/') ? kitFile(pathname) : resolveFile(game.dir, pathname.slice(1)), GAME_CSP);
+    if (host !== game.id) return answer(null, '', '');
+    return pathname.startsWith('/kit/') ? fromMap(kit, pathname.slice('/kit/'.length), GAME_CSP) : fromMap(game.files, pathname.slice(1), GAME_CSP);
   });
   ses.webRequest.onBeforeRequest((d, done) => done({ cancel: !d.url.startsWith(`og-game://${game.id}/`) }));
   lockDown(ses);
@@ -70,7 +76,9 @@ function closeGame() {
   const view = gameView;
   gameView = null;
   if (win && !win.isDestroyed()) win.contentView.removeChildView(view);
+  const { session: used } = view.webContents;
   view.webContents.close();
+  used.clearStorageData().then(() => used.clearCache()).catch((error) => console.error('The data of a closed game was not cleared:', error));
 }
 async function openGame({ id, token } = {}) {
   const game = games.find((g) => g.id === id);
@@ -109,18 +117,34 @@ const shellCall = (channel, fn) => ipcMain.handle(channel, (event, value) => {
   return fn(value);
 });
 
-shellCall('games', () => ({ server: SERVER, games: games.map(({ dir, page, icon, ...rest }) => rest) }));
+shellCall('games', () => ({ server: SERVER, stun: config.stun ?? null, games: games.map(({ dir, page, icon, rules, files, ...rest }) => rest) }));
 shellCall('game:open', openGame);
 shellCall('game:close', closeGame);
 shellCall('game:bounds', (b) => {
   if (!gameView || ![b?.x, b?.y, b?.width, b?.height].every((n) => Number.isFinite(n) && n >= 0)) return;
   gameView.setBounds({ x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) });
 });
+/* Leaderboards live on the match server. The window itself never opens a web address. */
+const HTTP = SERVER.replace(/^ws/, 'http'), ASK_MS = 15_000, MAX_RESULT = 4 * 1024 * 1024;
+async function ask(where, init = {}) {
+  const res = await net.fetch(`${HTTP}${where}`, { ...init, signal: AbortSignal.timeout(ASK_MS), credentials: 'omit', redirect: 'error', bypassCustomProtocolHandlers: true });
+  if (!res.ok && res.status !== 422) throw new Error(`the server answered ${res.status}`);
+  return res.json();
+}
+shellCall('leaderboard', (game) => {
+  if (!games.some((g) => g.id === game)) throw new Error('unknown game');
+  return ask(`/leaderboard?game=${game}`);
+});
+shellCall('result', (transcript) => {
+  const ticket = transcript?.terms?.ticket, body = JSON.stringify(transcript);
+  if (!/^[0-9a-f-]{36}$/.test(ticket ?? '') || body.length > MAX_RESULT) throw new Error('not a ranked match');
+  return ask(`/result?ticket=${ticket}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+});
 shellCall('game:send', ({ token, msg } = {}) => { if (gameView && token === gameToken && small(msg)) gameView.webContents.send('app:message', msg); });
 ipcMain.on('game:message', (event, text) => { if (fromGame(event)) fromGameText(text); });
 
 function createWindow() {
-  win = new BrowserWindow({ width: 1080, height: 800, minWidth: 360, minHeight: 560, show: false, backgroundColor: '#100a20', title: 'OpenGames',
+  win = new BrowserWindow({ width: 1080, height: 800, minWidth: 360, minHeight: 560, show: false, icon: path.join(ROOT, 'packaging/icon.png'), backgroundColor: '#100a20', title: 'OpenGames',
     webPreferences: { ...safePage, preload: path.join(import.meta.dirname, 'shell-preload.cjs') } });
   lockPage(win.webContents);
   win.once('ready-to-show', () => (process.env.OPENGAMES_QUIET ? win.showInactive() : win.show()));
@@ -129,8 +153,13 @@ function createWindow() {
   return win.loadURL(SHELL);
 }
 
+const isFirst = app.requestSingleInstanceLock() || !app.isPackaged;
+if (!isFirst) app.quit();
+app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+app.on('web-contents-created', (_event, contents) => lockPage(contents));
 // Not awaited at the top level: Electron only becomes ready once this file has loaded.
 app.whenReady().then(() => {
+  if (!isFirst) return undefined;
   protocol.handle('og', serveShell);
   lockDown(session.defaultSession);
   return createWindow();

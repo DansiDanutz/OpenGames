@@ -7,23 +7,25 @@ import * as av from '../games/avioane/rules.js';
 
 const SEED = '0123456789abcdef'.repeat(4), SALT = 'ab'.repeat(16);
 const FLEET = [{ kind: 'plane', r: 0, c: 2, dir: 0 }, { kind: 'plane', r: 5, c: 7, dir: 0 }, { kind: 'boat4', r: 9, c: 0, dir: 0 }, { kind: 'boat3', r: 5, c: 0, dir: 0 }, { kind: 'boat2', r: 0, c: 8, dir: 0 }];
-const at = (r, c) => r * av.SIZE + c;
+const N = 10, HARD = { n: N, level: 'hard' }, OPTIONS = { size: '10', level: 'hard' };
+const at = (r, c) => r * N + c;
+const cellsOf = (p) => av.cellsOf(N, p), isFleet = (f) => av.isFleet(N, f), answer = (f, log, cell) => av.answer(HARD, f, log, cell);
 const begin = (fleets = [FLEET, FLEET]) => {
-  const m = new Match(av, { seed: SEED, players: 2 });
+  const m = new Match(av, { seed: SEED, players: 2, options: OPTIONS });
   fleets.forEach((f, p) => assert.ok(m.play(p, { type: 'commit', hash: av.seal(f, SALT) }).ok));
   return m;
 };
 /* One shot and its answer, as two honest players give them. */
 const shoot = (m, player, cell, fleet = FLEET) => {
   assert.ok(m.play(player, { type: 'shoot', cell }).ok);
-  const out = m.play(1 - player, { type: 'answer', ...av.answer(fleet, m.view(0).log[1 - player], cell) });
+  const out = m.play(1 - player, { type: 'answer', ...answer(fleet, m.view(0).log[1 - player], cell) });
   assert.ok(out.ok, out.error);
   return out;
 };
 /* Player 0 brings down everything; player 1 keeps missing. */
 const win = (m) => {
-  const targets = FLEET.flatMap((p) => (p.kind === 'plane' ? [av.cellsOf(p)[0]] : av.cellsOf(p)));
-  const misses = Array.from({ length: 100 }, (_, i) => i).filter((i) => av.answer(FLEET, [], i).says === 'miss');
+  const targets = FLEET.flatMap((p) => (p.kind === 'plane' ? [cellsOf(p)[0]] : cellsOf(p)));
+  const misses = Array.from({ length: 100 }, (_, i) => i).filter((i) => answer(FLEET, [], i).says === 'miss');
   targets.forEach((cell, n) => { shoot(m, 0, cell); if (n < targets.length - 1) shoot(m, 1, misses[n]); });
 };
 
@@ -33,27 +35,27 @@ test('the seal is SHA-256, so a fleet cannot be changed or guessed', () => {
   assert.notEqual(av.seal(FLEET, SALT), av.seal([{ ...FLEET[0], c: 3 }, ...FLEET.slice(1)], SALT));
 });
 test('a plane has ten cells with its head first, in all four directions', () => {
-  const up = av.cellsOf({ kind: 'plane', r: 0, c: 2, dir: 0 });
+  const up = cellsOf({ kind: 'plane', r: 0, c: 2, dir: 0 });
   assert.deepEqual([...up].sort((a, b) => a - b), [at(0, 2), at(1, 0), at(1, 1), at(1, 2), at(1, 3), at(1, 4), at(2, 2), at(3, 1), at(3, 2), at(3, 3)]);
   for (let dir = 0; dir < 4; dir++) {
-    const cells = av.cellsOf({ kind: 'plane', r: 5, c: 5, dir });
+    const cells = cellsOf({ kind: 'plane', r: 5, c: 5, dir });
     assert.equal(new Set(cells).size, 10);
     assert.equal(cells[0], at(5, 5));
   }
-  assert.equal(av.cellsOf({ kind: 'plane', r: 0, c: 0, dir: 0 }), null);
+  assert.equal(cellsOf({ kind: 'plane', r: 0, c: 0, dir: 0 }), null);
 });
 test('a fleet must be complete, on the board and without overlaps', () => {
-  assert.equal(av.isFleet(FLEET), true);
+  assert.equal(isFleet(FLEET), true);
   const swap = (i, change) => FLEET.map((p, n) => (n === i ? { ...p, ...change } : p));
-  for (const bad of [null, [], FLEET.slice(1), [...FLEET, FLEET[4]], swap(0, { c: 0 }), swap(0, { dir: 4 }), swap(2, { dir: 2 }), swap(3, { r: 1, c: 0 }), swap(4, { kind: 'boat4' }), swap(1, { r: 0.5 })]) assert.equal(av.isFleet(bad), false);
+  for (const bad of [null, [], FLEET.slice(1), [...FLEET, FLEET[4]], swap(0, { c: 0 }), swap(0, { dir: 4 }), swap(2, { dir: 2 }), swap(3, { r: 1, c: 0 }), swap(4, { kind: 'boat4' }), swap(1, { r: 0.5 })]) assert.equal(isFleet(bad), false);
 });
 test('random fleets are always allowed and differ', () => {
   const random = createRandom('3'.repeat(32)), seen = new Set();
-  for (let i = 0; i < 300; i++) { const f = av.randomFleet(random); assert.ok(av.isFleet(f)); seen.add(JSON.stringify(f)); }
+  for (let i = 0; i < 300; i++) { const f = av.randomFleet(N, random); assert.ok(isFleet(f)); seen.add(JSON.stringify(f)); }
   assert.ok(seen.size > 290);
 });
 test('nobody shoots before both fleets are sealed, and a seal is final', () => {
-  const m = new Match(av, { seed: SEED, players: 2 });
+  const m = new Match(av, { seed: SEED, players: 2, options: OPTIONS });
   assert.match(m.play(0, { type: 'shoot', cell: 0 }).error, /not now/);
   assert.equal(m.play(0, { type: 'commit', hash: 'x' }).ok, false);
   assert.ok(m.play(0, { type: 'commit', hash: av.seal(FLEET, SALT) }).ok);
@@ -120,7 +122,7 @@ test('a winner who changed the fleet, the salt or an answer loses', () => {
   shoot(m, 0, at(9, 9));
   m.play(1, { type: 'shoot', cell: at(0, 2) });
   m.play(0, { type: 'answer', says: 'miss' });    // a lie: that was the head
-  const targets = FLEET.flatMap((p) => (p.kind === 'plane' ? [av.cellsOf(p)[0]] : av.cellsOf(p)));
+  const targets = FLEET.flatMap((p) => (p.kind === 'plane' ? [cellsOf(p)[0]] : cellsOf(p)));
   const misses = [at(9, 9), at(8, 1), at(9, 8), at(6, 9), at(6, 0), at(7, 0), at(4, 4), at(3, 9), at(2, 9), at(4, 0), at(4, 2), at(8, 2)];
   targets.forEach((cell, n) => { shoot(m, 0, cell); if (n < targets.length - 1) shoot(m, 1, misses[n]); });
   assert.deepEqual(m.play(0, { type: 'reveal', fleet: FLEET, salt: SALT }).result, { winner: 1, reason: 'unfair' });
@@ -128,15 +130,15 @@ test('a winner who changed the fleet, the salt or an answer loses', () => {
 test('a fleet that breaks the rules loses when it is shown', () => {
   const bad = FLEET.map((p, i) => (i === 1 ? FLEET[0] : p));
   const m = begin([bad, FLEET]);
-  const targets = FLEET.flatMap((p) => (p.kind === 'plane' ? [av.cellsOf(p)[0]] : av.cellsOf(p)));
-  const misses = Array.from({ length: 100 }, (_, i) => i).filter((i) => av.answer(bad, [], i).says === 'miss');
+  const targets = FLEET.flatMap((p) => (p.kind === 'plane' ? [cellsOf(p)[0]] : cellsOf(p)));
+  const misses = Array.from({ length: 100 }, (_, i) => i).filter((i) => answer(bad, [], i).says === 'miss');
   targets.forEach((cell, n) => { shoot(m, 0, cell); if (n < targets.length - 1) shoot(m, 1, misses[n], bad); });
   assert.equal(m.play(0, { type: 'reveal', fleet: bad, salt: SALT }).result.winner, 1);
 });
 test('a player who always says miss loses when the whole board was shot', () => {
   const m = begin();
   let out;
-  const mine = Array.from({ length: 100 }, (_, i) => i).filter((i) => av.answer(FLEET, [], i).says === 'miss');
+  const mine = Array.from({ length: 100 }, (_, i) => i).filter((i) => answer(FLEET, [], i).says === 'miss');
   for (let i = 0; i < 100 && !m.result(); i++) {
     m.play(0, { type: 'shoot', cell: i });
     out = m.play(1, { type: 'answer', says: 'miss' });
@@ -155,6 +157,19 @@ test('moves of the wrong shape are refused and change nothing', () => {
     assert.equal(m.fingerprint(), before);
   }
 });
+test('on an easy board a miss beside a piece is near, and a hard board never says so', () => {
+  for (const [level, says] of [['easy', 'near'], ['hard', 'miss']]) {
+    const m = new Match(av, { seed: SEED, players: 2, options: { size: '10', level } });
+    for (const p of [0, 1]) m.play(p, { type: 'commit', hash: av.seal(FLEET, SALT) });
+    m.play(0, { type: 'shoot', cell: at(0, 1) });
+    assert.equal(av.answer({ n: N, level }, FLEET, [], at(0, 1)).says, says);
+    assert.equal(m.play(1, { type: 'answer', says: 'near' }).ok, level === 'easy');
+  }
+});
+test('every board has fleets that fit', () => {
+  const random = createRandom('5'.repeat(32));
+  for (const n of Object.keys(av.FLEETS).map(Number)) for (let i = 0; i < 30; i++) assert.ok(av.isFleet(n, av.randomFleet(n, random)));
+});
 test('Avioane passes the automatic check', async () => {
-  assert.equal((await checkGame(new URL('../games/avioane', import.meta.url).pathname)).matches, 20);
+  assert.equal((await checkGame(new URL('../games/avioane', import.meta.url).pathname)).matches, 36);
 });

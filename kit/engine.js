@@ -2,7 +2,7 @@
 /* The rules engine. It runs the same way on both computers, so each player can
    check every move of the other. A game's rules.js exports pure functions:
 
-     setup({ random, players })        -> state (plain JSON)
+     setup({ random, players, options }) -> state (plain JSON)
      move(state, player, move)         -> the next state, or throws when not allowed
      view(state, player)               -> what that player may see (optional)
      result(state)                     -> null, or { winner: 0 | 1 | null }
@@ -57,10 +57,10 @@ const isResign = (move) => !!move && typeof move === 'object' && move.$ === 'res
 export class Match {
   #rules; #state; #resigned = null; #players;
 
-  constructor(rules, { seed, players }) {
+  constructor(rules, { seed, players, options = {} }) {
     this.#rules = rules;
     this.#players = players;
-    this.#state = copy(rules.setup({ random: createRandom(seed), players }));
+    this.#state = copy(rules.setup({ random: createRandom(seed), players, options: copy(options) }));
   }
 
   /* Plays a move for a player. Nothing changes when it is not allowed. */
@@ -86,4 +86,74 @@ export class Match {
   view(player) { return copy(this.#rules.view ? this.#rules.view(copy(this.#state), player) : this.#state); }
 
   fingerprint() { return fingerprint({ state: this.#state, resigned: this.#resigned }); }
+}
+
+/* ---- what the host decides before a match */
+export const ROUNDS = [1, 3, 5];                       // one game, best of three, best of five
+const MAX_DRAWS = 2;
+
+/* The host's choices, checked against what the game offers. Both computers do this. */
+export function cleanTerms(declared, terms) {
+  const { options = {}, rounds = 1, ticket = null, ranked = false } = terms ?? {};
+  if (!ROUNDS.includes(rounds)) throw new Error('unknown number of games');
+  if (ticket !== null && !/^[0-9a-f-]{36}$/.test(ticket)) throw new Error('bad ticket');
+  if (typeof ranked !== 'boolean' || (ranked && !ticket)) throw new Error('only a match with a ticket can be ranked');
+  if (Object.keys(options).some((id) => !declared.some((o) => o.id === id))) throw new Error('unknown option');
+  const chosen = declared.map(({ id, choices, default: usual }) => {
+    const value = Object.hasOwn(options, id) ? options[id] : usual;
+    if (!choices.some((c) => c.id === value)) throw new Error(`unknown choice for ${id}`);
+    return [id, value];
+  });
+  return { options: Object.fromEntries(chosen), rounds, ranked, ticket };
+}
+const roundSeed = (seed, round) => (round ? [0, 1, 2, 3].map((part) => fingerprint({ seed, round, part })).join('') : seed);
+
+/* One to five games between the same two players. The players change seats after every game, so
+   going first is shared. A move names its game: one that arrives late never counts in the next. */
+export class Series {
+  #rules; #seed; #terms; #match; #round = 0; #score = [0, 0]; #result = null;
+
+  constructor(rules, { seed, terms = { options: {}, rounds: 1 } }) {
+    this.#rules = rules; this.#seed = seed; this.#terms = copy(terms);
+    this.#deal();
+  }
+
+  #deal() { this.#match = new Match(this.#rules, { seed: roundSeed(this.#seed, this.#round), players: 2, options: this.#terms.options }); }
+
+  get round() { return this.#round; }
+  get score() { return this.#score.slice(); }
+  seat(player) { return (player + this.#round) % 2; }
+
+  play(player, m) {
+    if (this.#result) return { ok: false, error: 'the match is over' };
+    if (![0, 1].includes(player)) return { ok: false, error: 'unknown player' };
+    if (isResign(m)) {
+      this.#result = { winner: 1 - player, reason: 'resigned', score: this.score };
+      return { ok: true, result: this.result(), fingerprint: this.fingerprint() };
+    }
+    if (m?.round !== this.#round) return { ok: false, error: 'that game is over' };
+    if (isResign(m.move)) return { ok: false, error: 'unknown move' };
+    const out = this.#match.play(this.seat(player), m.move);
+    if (!out.ok) return out;
+    const ended = out.result ? this.#end(out.result) : undefined;
+    return { ok: true, result: this.result(), fingerprint: this.fingerprint(), ...(ended ? { ended } : {}) };
+  }
+
+  #end({ winner, reason = '' }) {
+    const player = winner === null ? null : this.seat(winner), { rounds } = this.#terms;
+    if (player !== null) this.#score[player] += 1;
+    const ended = { round: this.#round, seat: winner, winner: player, reason, score: this.score, view: [0, 1].map((seat) => this.#match.view(seat)) };
+    const [a, b] = this.#score;
+    if (Math.max(a, b) > rounds / 2 || this.#round + 1 >= rounds + MAX_DRAWS || (rounds === 1 && winner === null)) {
+      this.#result = { winner: a === b ? null : a > b ? 0 : 1, reason, score: this.score };
+    } else {
+      this.#round += 1;
+      this.#deal();
+    }
+    return ended;
+  }
+
+  result() { return this.#result ? copy(this.#result) : null; }
+  view(player) { return this.#match.view(this.seat(player)); }
+  fingerprint() { return fingerprint({ round: this.#round, score: this.#score, result: this.#result, match: this.#match.fingerprint() }); }
 }

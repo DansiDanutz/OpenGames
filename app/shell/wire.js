@@ -4,6 +4,32 @@
 const DIRECT_MS = 6000;
 const MAX_TEXT = 24 * 1024;
 
+const MAX_SDP = 8 * 1024, MAX_CANDIDATES = 30;
+
+/* The other computer's addresses are only used when they look like a player's: UDP, no low port, and
+   nothing on this computer itself. */
+const isOwnOrSpecial = (ip) => /^(0\.|127\.|22[4-9]\.|23\d\.|24\d\.|25[0-5]\.)/.test(ip) || /^(::1?$|ff|::ffff:)/i.test(ip);
+export function isPlayerAddress(candidate) {
+  const line = candidate?.candidate;
+  if (line === '') return true;                          // the end of the list
+  const m = typeof line === 'string' && line.length <= 400
+    && /^candidate:[\w+/]{1,32} \d{1,5} udp \d{1,10} (\S{2,60}) (\d{1,5}) typ (host|srflx|prflx)( |$)/i.exec(line);
+  if (!m) return false;
+  const [, ip, port] = m;
+  if (Number(port) < 1024 || Number(port) > 65535) return false;
+  if (/^[0-9a-f-]{36}\.local$/i.test(ip)) return true;
+  const isV4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip), isV6 = /^[0-9a-f:]+$/i.test(ip) && ip.includes(':');
+  return (isV4 || isV6) && !isOwnOrSpecial(ip);
+}
+/* A description may only open one data channel. Addresses in it are left out; they come one by one. */
+export function cleanDescription(d, type) {
+  if (d?.type !== type || typeof d.sdp !== 'string' || d.sdp.length > MAX_SDP) throw new Error('bad description');
+  const lines = d.sdp.split(/\r?\n/).filter((x) => x && !x.startsWith('a=candidate'));
+  const media = lines.filter((x) => x.startsWith('m='));
+  if (media.length !== 1 || !media[0].startsWith('m=application ')) throw new Error('bad description');
+  return { type, sdp: `${lines.join('\r\n')}\r\n` };
+}
+
 const parse = (text) => {
   if (typeof text !== 'string' || text.length > MAX_TEXT) return undefined;
   try { return JSON.parse(text); } catch { return undefined; }
@@ -26,7 +52,7 @@ export function meet({ url, key, ask, on, Socket = globalThis.WebSocket }) {
     else if (msg.t === 'paired' && !paired) {
       paired = true;
       peer = { signal: () => {}, relay: () => {}, lost: () => {} };
-      on.paired({ host: msg.host === true, peer, send, close: () => { ended = true; ws.close(); } });
+      on.paired({ host: msg.host === true, ticket: typeof msg.ticket === 'string' ? msg.ticket : null, theirPub: typeof msg.pub === 'string' ? msg.pub : null, peer, send, close: () => { ended = true; ws.close(); } });
     } else if (msg.t === 'signal') peer?.signal(msg.data);
     else if (msg.t === 'relay') peer?.relay(msg.data);
     else if (msg.t === 'gone') peer?.lost();
@@ -38,7 +64,7 @@ export function meet({ url, key, ask, on, Socket = globalThis.WebSocket }) {
 export function link({ host, peer, send, close }, { hideAddress = false, iceServers = [], directMs = DIRECT_MS, Connection = globalThis.RTCPeerConnection } = {}) {
   return new Promise((resolve, reject) => {
     const direct = !hideAddress && !!Connection;
-    let pc = null, channel = null, mode = null, settled = false, shut = false, timer = null;
+    let pc = null, channel = null, mode = null, settled = false, shut = false, timer = null, candidates = 0;
     const inbox = [];
     const wire = {
       mode: null, onClose: () => {},
@@ -87,14 +113,15 @@ export function link({ host, peer, send, close }, { hideAddress = false, iceServ
         if (pc) return;                                  // one offer only
         if (!direct) { send({ t: 'signal', data: { noDirect: true } }); return; }
         openConnection();
-        await pc.setRemoteDescription(data.offer);
+        await pc.setRemoteDescription(cleanDescription(data.offer, 'offer'));
         await pc.setLocalDescription();
         send({ t: 'signal', data: { answer: pc.localDescription.toJSON() } });
         for (const c of early.splice(0)) await pc.addIceCandidate(c).catch(() => {});
       } else if (data.answer && host && pc) {
-        await pc.setRemoteDescription(data.answer);
+        await pc.setRemoteDescription(cleanDescription(data.answer, 'answer'));
         for (const c of early.splice(0)) await pc.addIceCandidate(c).catch(() => {});
       } else if (data.candidate && direct) {
+        if (++candidates > MAX_CANDIDATES || !isPlayerAddress(data.candidate)) return;
         if (pc?.remoteDescription) await pc.addIceCandidate(data.candidate).catch(() => {});
         else if (early.length < 40) early.push(data.candidate);
       }

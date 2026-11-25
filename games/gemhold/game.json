@@ -1,13 +1,63 @@
 {
   "id": "gemhold",
   "name": "Gemhold",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": "DansiDanutz",
   "license": "MIT",
   "summary": "Take turns placing blocks on a field of gems. Hold more of two colours than the other player.",
-  "players": { "min": 2, "max": 2 },
+  "players": {
+    "min": 2,
+    "max": 2
+  },
   "minutes": 8,
   "page": "index.html",
   "icon": "icon.svg",
-  "rules": "rules.js"
+  "rules": "rules.js",
+  "options": [
+    {
+      "id": "size",
+      "label": "Board",
+      "default": "7",
+      "choices": [
+        {
+          "id": "5",
+          "label": "5 × 5"
+        },
+        {
+          "id": "6",
+          "label": "6 × 6"
+        },
+        {
+          "id": "7",
+          "label": "7 × 7"
+        },
+        {
+          "id": "10",
+          "label": "10 × 10"
+        }
+      ]
+    },
+    {
+      "id": "level",
+      "label": "Difficulty",
+      "default": "easy",
+      "choices": [
+        {
+          "id": "easy",
+          "label": "Easy",
+          "note": "An open field."
+        },
+        {
+          "id": "hard",
+          "label": "Hard",
+          "note": "Rocks stand on the field. No block may cover one."
+        }
+      ]
+    }
+  ],
+  "howto": [
+    "Take turns placing blocks. Your first block covers your own corner; every later one touches your ground by a side.",
+    "The first block of a game is small: one to three cells, depending on the board.",
+    "When nobody can place a block, each gem colour goes to the player who holds more of it. Most colours win, then most gems, then the player who went second."
+  ]
 }

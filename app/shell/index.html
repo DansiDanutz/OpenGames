@@ -9,7 +9,8 @@
 <body data-screen="library">
 <header class="top">
   <p class="mark">Open<b>Games</b></p>
-  <form id="nameForm" class="name"><label for="name">Your name</label><input id="name" maxlength="24" autocomplete="off" spellcheck="false"></form>
+  <div class="right"><button id="sound" type="button" aria-pressed="true">Sound on</button>
+  <form id="nameForm" class="name"><label for="name">Your name</label><input id="name" maxlength="24" autocomplete="off" spellcheck="false"></form></div>
 </header>
 
 <main id="library">
@@ -28,6 +29,38 @@
   </section>
 </main>
 
+<main id="setup" hidden>
+  <form id="setupForm" class="sheet">
+    <h1 id="setupTitle" tabindex="-1"></h1>
+    <p id="setupText"></p>
+    <div id="choices"></div>
+    <label class="check"><input type="checkbox" id="ranked"> Count this match on the leaderboard</label>
+    <p class="small">A ranked match shows your name on the leaderboard and sends its signed moves to the match server, which checks them. The other player sees this before the match.</p>
+    <div class="row"><button class="go" id="setupGo"></button><button type="button" id="setupBack">Back</button></div>
+  </form>
+</main>
+
+<main id="terms" hidden>
+  <div class="sheet">
+    <h1 id="termsTitle" tabindex="-1"></h1>
+    <p id="termsWho"></p>
+    <dl id="termsList"></dl>
+    <h2>How to win</h2>
+    <ol id="termsRules"></ol>
+    <div class="row"><button class="go" id="termsYes" type="button">Accept and play</button><button id="termsNo" type="button">Leave</button></div>
+  </div>
+</main>
+
+<main id="board" hidden>
+  <div class="sheet wide">
+    <h1 id="boardTitle" tabindex="-1"></h1>
+    <p id="boardText" role="status"></p>
+    <table id="boardTable"><thead><tr><th scope="col">Place</th><th scope="col">Player</th><th scope="col">Points</th><th scope="col">Won</th><th scope="col">Lost</th><th scope="col">Drawn</th></tr></thead><tbody id="boardRows"></tbody></table>
+    <p class="small">Everyone starts at 1200 points. Beating a stronger player is worth more. Players who leave more than one match in five are not shown.</p>
+    <div class="row"><button type="button" id="boardBack">Back to games</button></div>
+  </div>
+</main>
+
 <main id="wait" hidden>
   <h1 id="waitTitle" tabindex="-1"></h1>
   <p id="waitText"></p>
@@ -38,10 +71,10 @@
 <main id="match" hidden>
   <div class="bar">
     <p class="player p0"><span id="p0"></span></p>
-    <p class="between"><span id="mode"></span></p>
+    <p class="between"><b id="score" aria-label="Games won"></b><span id="mode"></span></p>
     <p class="player p1"><span id="p1"></span></p>
   </div>
-  <div class="status"><p id="status" role="status"></p><button id="leave" type="button">Give up</button></div>
+  <div class="status"><p id="status" role="status"></p><p id="rules" class="small"></p><button id="leave" type="button">Give up</button></div>
   <div id="stage"></div>
 </main>
 <div id="notice" role="alert"></div>

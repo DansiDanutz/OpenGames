@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import dgram from 'node:dgram';
 import net from 'node:net';
-import { apps, closeAll, inGame, invite, open, row, server, shot, status } from './windows.js';
+import { accept, apps, choose, closeAll, inGame, invite, open, row, server, shot, status } from './windows.js';
 
 /* Counts everything that reaches this computer's network from a page. */
 async function listeners() {
@@ -32,16 +32,22 @@ const leak = (l, inFrame) => `(async () => {
 const drag = (rects) => `(() => {
   const b = document.getElementById('board');
   for (const x of ${JSON.stringify(rects)}) {
-    const box = b.getBoundingClientRect(), s = box.width / 6;
-    const ev = (type, r, c) => b.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, buttons: 1, clientX: box.left + (c + .5) * s, clientY: box.top + (r + .5) * s }));
+    const ev = (type, r, c) => { const p = b.pointOf(r, c); b.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, buttons: 1, clientX: p.x, clientY: p.y })); };
     b.setPointerCapture = () => {};
     ev('pointerdown', x.r0, x.c0); ev('pointermove', x.r1, x.c1); ev('pointerup', x.r1, x.c1);
   }
 })()`;
-const solve = (p) => inGame(p, `import('./rules.js').then(({ solve }) => {
-  const n = [...document.querySelectorAll('.cell')].map((c) => Number(c.textContent) || 0);
-  return solve(Array.from({ length: 6 }, (_, r) => n.slice(r * 6, r * 6 + 6)));
-})`);
+const solve = (p) => inGame(p, "import('./rules.js').then(({ solve }) => solve(document.getElementById('board').inspect().puzzle))");
+/* Both look for a player; whoever joined reads the rules and accepts them. */
+async function find(a, b) {
+  await row(a, 'shikaku').getByText('Find a player').click();
+  await choose(a);
+  await a.page.waitForSelector('text=Looking for a player');
+  await row(b, 'shikaku').getByText('Find a player').click();
+  await choose(b);
+  await accept(b);
+  await Promise.all([a, b].map((p) => status(p, /^Playing$/)));
+}
 try {
   const [ann, bob] = [await open('Ann'), await open('Bob')];
   assert.ok(await ann.page.evaluate(() => [...document.querySelectorAll('.art')].every((i) => i.complete && i.naturalWidth)), 'the game pictures load');
@@ -89,8 +95,10 @@ try {
   await ann.page.waitForTimeout(300);
   assert.match(await inGame(ann, 'location.href'), /^og-game:\/\/shikaku\//);
 
-  await inGame(bob, drag(rects.slice(3)));
-  await Promise.all([status(bob, /^You win\.$/), status(ann, /^You lose\.$/)]);
+  // Tapping a block takes it away, so the board is cleared before every block is placed for good.
+  await inGame(bob, "document.getElementById('clear').click()");
+  await inGame(bob, drag(rects));
+  await Promise.all([status(bob, /^You win\. \+16 points\.$/), status(ann, /^You lose\. .16 points\.$/)]);
   await bob.page.waitForTimeout(400);
   await shot(bob, 'won');
   for (const p of [ann, bob]) await p.page.click('#leave');
@@ -102,14 +110,11 @@ try {
   await invite(ann, bob);
   assert.deepEqual([await ann.page.textContent('#mode'), await bob.page.textContent('#mode')], ['Through the server', 'Through the server']);
   await bob.page.click('#leave');
-  await Promise.all([status(bob, /^You gave up\.$/), status(ann, /gave up\.$/)]);
+  await Promise.all([status(bob, /^You gave up\./), status(ann, /gave up\./)]);
   for (const p of [ann, bob]) await p.page.click('#leave');
 
   // A player who disappears does not cost the other one a loss.
-  await row(ann, 'shikaku').getByText('Find a player').click();
-  await ann.page.waitForSelector('text=Looking for a player');
-  await row(bob, 'shikaku').getByText('Find a player').click();
-  await Promise.all([ann, bob].map((p) => status(p, /^Playing$/)));
+  await find(ann, bob);
   await bob.app.close();
   apps.pop();
   await status(ann, /connection was lost.*does not count/);
@@ -118,7 +123,7 @@ try {
 
   // Games opened and closed quickly: the last one works. A game that floods the app is closed.
   const carl = await open('Carl');
-  for (let i = 0; i < 4; i++) { await row(ann, 'shikaku').getByText('Find a player').click(); await ann.page.click('#cancel'); }
+  for (let i = 0; i < 4; i++) { await row(ann, 'shikaku').getByText('Find a player').click(); await choose(ann); await ann.page.click('#cancel'); }
   for (let i = 0; i < 2; i++) {
     await invite(ann, carl);
     if (i) await inGame(carl, 'for (let n = 0; n < 1000; n++) opengames.send({ t: "x", n }); 0').catch(() => {});
@@ -129,9 +134,9 @@ try {
   }
   await ann.page.waitForSelector('text=You won 2 and lost 1');   // the closed match did not count
   // A wrong code, then the server is off.
-  await row(ann, 'shikaku').locator('.join input').fill('AAAAAA');
+  await row(ann, 'shikaku').locator('.join input').fill('AAAAAAAA');
   await row(ann, 'shikaku').locator('.join button').click();
-  await ann.page.waitForSelector('text=There is no open match with that code.');
+  await ann.page.waitForSelector('text=There is no open match with that code');
   for (const width of [360, 768, 1080]) {
     await ann.app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setContentSize(w, 760), width);
     await ann.page.waitForTimeout(150);
@@ -139,7 +144,11 @@ try {
     await shot(ann, `library-${width}`);
   }
   await server.close();
+  await row(ann, 'gemhold').getByText('Leaderboard').click();
+  await ann.page.waitForSelector('text=The leaderboard cannot be reached');
+  await ann.page.click('#boardBack');
   await row(ann, 'shikaku').getByText('Find a player').click();
+  await choose(ann);
   await ann.page.waitForSelector('text=The match server cannot be reached');
   assert.deepEqual([...ann.errors, ...bob.errors].filter((e) => !/WebSocket|ERR_CONNECTION_REFUSED/.test(e)), []);
   console.log('APP OK: direct match, server match, lost player, wrong code, server off, game locked in');
