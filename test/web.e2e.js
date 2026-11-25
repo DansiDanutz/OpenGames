@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { chromium, webkit, devices } from 'playwright-core';
 import { readLibrary } from '../app/library.js';
+import { createAccounts } from '../server/accounts.js';
 import { inviteLink } from '../app/shell/invite.js';
 import { createLeaderboard } from '../server/leaderboard.js';
 import { startMatchServer } from '../server/match-server.js';
@@ -11,8 +12,13 @@ import path from 'node:path';
 const ROOT = path.join(import.meta.dirname, '..'), isWebkit = process.argv[2] === 'webkit';
 const games = readLibrary(path.join(ROOT, 'games'), path.join(ROOT, 'kit'));
 const leaderboard = createLeaderboard({ file: ':memory:', library: games.map((g) => ({ ...g, rulesPath: path.join(g.dir, g.rules) })) });
-const server = await startMatchServer({ leaderboard, site: createPlay({ games }), limits: { rankSameAddress: true } });
-const at = `http://127.0.0.1:${server.port}`;
+const box = [];
+let at = '';
+const accounts = createAccounts({ file: ':memory:', host: () => new URL(at).host, mail: async (m) => { box.push(m); },
+  // Google itself is played by the page below.
+  google: { begin: () => { const state = crypto.randomUUID(); return { state, verifier: 'v', nonce: 'n', url: `https://accounts.google.com/o/oauth2/v2/auth?state=${state}` }; }, finish: async () => 'bea@gmail.com' } });
+const server = await startMatchServer({ leaderboard, accounts, site: createPlay({ games }), limits: { rankSameAddress: true } });
+at = `http://127.0.0.1:${server.port}`;
 const browser = await (isWebkit ? webkit.launch() : chromium.launch({ channel: 'chrome', args: ['--enable-unsafe-swiftshader'] }));
 const errors = [];
 async function open(hash = '') {
@@ -95,6 +101,46 @@ try {
   await ann.reload();
   await ann.waitForSelector('#games li');
   assert.deepEqual(await me(), before);
+  // Signing in with a code, on two devices.
+  const signIn = async (p) => {
+    await p.click('#account');
+    await p.fill('#emailInput', 'ann@example.org');
+    await p.click('#step-email .go');
+    await p.waitForSelector('text=We sent six numbers');
+    await shot(p, 'signin');
+    await p.fill('#codeInput', '12');
+    await p.click('#step-code .go');
+    await p.waitForSelector('text=That code is wrong');
+    await p.fill('#codeInput', box.at(-1).code);
+    await p.click('#step-code .go');
+    await p.waitForSelector('text=Signed in as ann@example.org');
+  };
+  await signIn(ann);
+  await ann.reload();
+  await ann.waitForSelector('#account:has-text("Account")');
+  const other = await open();
+  await signIn(other);
+  assert.equal(await other.inputValue('#name'), 'Ann');
+  await other.click('#accountRemove');
+  await other.click('text=Delete it and my points for good');
+  await other.waitForSelector('text=Your account is deleted');
+  await other.context().close();
+  await ann.reload();
+  await ann.waitForSelector('#account:has-text("Sign in")');
+  // Signing in with Google, on the way to an invite.
+  const bea = await open('#shikaku=ABCD2345&by=Cleo');
+  await bea.route('https://accounts.google.com/**', (route) => route.fulfill({ contentType: 'text/html', body: `<meta http-equiv="refresh" content="0;url=${at}/account/google?code=abc&amp;state=${new URL(route.request().url()).searchParams.get('state')}">` }));
+  await bea.waitForSelector('text=Cleo invites you to play');
+  await bea.click('#account');
+  await shot(bea, 'google');
+  await bea.click('#googleGo');
+  await bea.waitForSelector('text=Signed in as bea@gmail.com');
+  assert.equal(new URL(bea.url()).hash, '');
+  await bea.click('#signinBack');
+  await bea.waitForSelector('text=Cleo invites you to play');
+  await bea.reload();
+  await bea.waitForSelector('#account:has-text("Account")');
+  await bea.context().close();
   // Every game opens in its locked frame and starts against the computer.
   for (const g of games) {
     await card(ann, g.name).getByText('Play', { exact: true }).click();
@@ -213,4 +259,5 @@ try {
   await browser.close();
   await server.close();
   leaderboard.close();
+  accounts.close();
 }

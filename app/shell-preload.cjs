@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('desk', {
   toGame: (token, msg) => ipcRenderer.invoke('game:send', { token, msg }),
   submitResult: (value) => ipcRenderer.invoke('result', value),
   leaderboard: (game) => ipcRenderer.invoke('leaderboard', game),
+  accountOn: () => ipcRenderer.invoke('account:on'),
+  account: (action, body) => ipcRenderer.invoke('account', { action, body }),
   openLink: (id, kind) => ipcRenderer.invoke('link', { id, kind }),
   invite: (id, code, how, says) => ipcRenderer.invoke('invite', { ...says, id, code, how }),
   onGame: (fn) => ipcRenderer.on('game:message', (_event, { token, msg }) => fn(token, msg)),

@@ -2,7 +2,8 @@ import { Session, cleanName } from './session.js';
 import { Solo } from './solo.js';
 import { createTable } from './table.js';
 import { meet, link } from './wire.js';
-import { settings, identity, record, soloKey, addResult, lastTerms, saveTerms, myRoom } from './store.js';
+import { createAccount } from './account.js';
+import { account, settings, identity, record, soloKey, addResult, lastTerms, saveTerms, myInvite, myRoom } from './store.js';
 import { readInvite } from './invite.js';
 import { cleanTerms } from '/kit/engine.js';
 import { describe, drawChoices, readChoices, drawTerms, drawLeaderboard } from './rules.js';
@@ -19,7 +20,8 @@ const TEXT = {
   too_many: 'You met many players in a short time. Please wait a minute and try again.',
   bad_request: 'The match server did not accept that. Please try again.',
 };
-const SCREENS = ['library', 'room', 'terms', 'board', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000, RETRY_MS = 1500, MAX_TRIES = 20;
+const SCREENS = ['library', 'room', 'terms', 'board', 'signin', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000, RETRY_MS = 1500, MAX_TRIES = 20;
+let signedIn = null;
 let server = '', stun = null, library = [], current = null;      // current: { game, meeting, session, table, wire, over }
 
 /* While nothing happens a phone leaves the line out. */
@@ -162,7 +164,7 @@ async function showLeaderboard(game) {
     if ($('boardTitle').textContent !== `${game.name} leaderboard`) return;
     $('boardText').textContent = players.length ? '' : 'Nobody has finished a ranked match yet.';
     $('boardTable').hidden = !players.length;
-    drawLeaderboard($('boardRows'), players, me.pub);
+    drawLeaderboard($('boardRows'), players, account.value?.id ?? me.pub);
   } catch {
     $('boardText').textContent = 'The leaderboard cannot be reached. Check your internet connection and try again.';
   }
@@ -400,7 +402,7 @@ $('leave').onclick = () => {
 };
 $('cancel').onclick = () => leave();
 $('nameForm').onsubmit = (e) => { e.preventDefault(); $('name').blur(); };
-$('name').onchange = () => { settings.name = $('name').value; $('name').value = settings.name; };
+$('name').onchange = () => { settings.name = $('name').value; $('name').value = settings.name; signedIn?.rename(settings.name); };
 $('hide').onchange = () => { settings.hideAddress = $('hide').checked; };
 addEventListener('resize', placeGame);
 new ResizeObserver(placeGame).observe($('stage'));
@@ -420,10 +422,13 @@ function rulesOf(game, terms) {
   try { return terms && { ...cleanTerms(game.options, { ...terms, ranked: false, ticket: null }), ranked: terms.ranked === true }; } catch { return null; }
 }
 /* A link from an invite. A link alone connects nobody: the other player would learn this player's address. */
-const invite = readInvite(location.hash, library);
+const ticket = /^#google=([0-9a-f]{64}|failed)$/.exec(location.hash)?.[1];   // back from Google, perhaps to an invite
+const inviteHash = ticket ? myInvite.value : location.hash, invite = readInvite(inviteHash, library);
+myInvite.value = null;
 if (location.hash) history.replaceState(null, '', location.pathname);
 const saved = myRoom.value, savedGame = saved && library.find((g) => g.id === saved.game && g.hash === saved.hash);
 myRoom.value = null;
+let isInvited = !!invite;
 if (invite) {
   const { game, code, terms, by } = invite;
   $('invitedTitle').textContent = game.name;
@@ -431,8 +436,20 @@ if (invite) {
   $('invitedArt').src = `/icons/${game.id}`;
   $('invitedTerms').hidden = !terms;
   drawTerms($('invitedTerms'), $('invitedRules'), game, terms ?? cleanTerms(game.options, {}));
-  $('invitedYes').onclick = () => begin(game, { t: 'join', code }, {}, terms);
-  $('invitedNo').onclick = () => screen('library');
+  $('invitedYes').onclick = () => { isInvited = false; begin(game, { t: 'join', code }, {}, terms); };
+  $('invitedNo').onclick = () => { isInvited = false; screen('library'); };
   screen('invited');
   $('invitedTitle').focus();
-} else if (savedGame) begin(savedGame, { t: 'back', back: saved.back }, rulesOf(savedGame, saved.terms) ?? lastTerms(savedGame.id), rulesOf(savedGame, saved.accepted), saved.matchNo);
+} else if (savedGame && !ticket) begin(savedGame, { t: 'back', back: saved.back }, rulesOf(savedGame, saved.terms) ?? lastTerms(savedGame.id), rulesOf(savedGame, saved.accepted), saved.matchNo);
+/* Optional, and only where the server offers it. */
+desk.accountOn().then((ways) => {
+  if (!ways) return undefined;
+  const { host } = new URL(server);
+  for (const note of document.querySelectorAll('.privacyAt')) note.textContent = `More: https://${host}/privacy`;
+  signedIn = createAccount({ desk, host, ways, changed: () => { $('name').value = settings.name; }, close: () => screen(isInvited ? 'invited' : 'library'), beforeGoogle: () => { myInvite.value = isInvited ? inviteHash : ''; } });
+  $('account').onclick = () => { if (current) return; signedIn.draw(); screen('signin'); $('signinTitle').focus(); };
+  $('account').hidden = false;
+  if (!ticket) return signedIn.refresh();
+  screen('signin');
+  return signedIn.fromGoogle(ticket);
+}).catch(() => {});                                      // without the server there is nothing to sign in to
