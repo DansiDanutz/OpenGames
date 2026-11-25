@@ -133,6 +133,34 @@ try {
     for (const p of [ann, carl]) await p.page.click('#leave');
   }
   await ann.page.waitForSelector('text=You won 2 and lost 1');   // the closed match did not count
+  // An invite can be copied or sent on WhatsApp. Nothing really leaves this computer here.
+  await ann.app.evaluate(({ shell, clipboard }) => {
+    globalThis.sent = [];
+    shell.openExternal = async (url) => { globalThis.sent.push(url); };
+    clipboard.writeText = (text) => { globalThis.sent.push(text); };
+  });
+  await row(ann, 'shikaku').getByText('Invite a friend').click();
+  await choose(ann);
+  await ann.page.waitForFunction(() => /^[A-Z2-9]{8}$/.test(document.getElementById('code').textContent), null, { polling: 100 });
+  const code = await ann.page.textContent('#code');
+  for (const [how, said] of [['code', 'The code is copied'], ['message', 'The invite is copied'], ['whatsapp', 'WhatsApp is opening']]) {
+    await ann.page.click(`#share [data-how=${how}]`);
+    await ann.page.waitForSelector(`text=${said}`);
+  }
+  const sent = await ann.app.evaluate(() => globalThis.sent);
+  assert.equal(sent[0], code);
+  assert.match(sent[1], new RegExp(`Shikaku.*${code}`));
+  assert.equal(new URL(sent[2]).origin, 'https://wa.me');
+  assert.equal(new URL(sent[2]).searchParams.get('text'), sent[1]);
+  await assert.rejects(ann.page.evaluate(() => desk.invite('shikaku', 'https://x', 'whatsapp')), /not a code/);
+  await assert.rejects(ann.page.evaluate(() => desk.invite('shikaku', 'ABCD2345', 'mail')), /unknown way/);
+  await shot(ann, 'invite-share');
+  await ann.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(360, 760));
+  await ann.page.waitForTimeout(150);
+  assert.ok(await ann.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await shot(ann, 'invite-share-360');
+  await ann.page.click('#cancel');
+  await ann.page.waitForSelector('#library:not([hidden])');
   // A wrong code, then the server is off.
   await row(ann, 'shikaku').locator('.join input').fill('AAAAAAAA');
   await row(ann, 'shikaku').locator('.join button').click();

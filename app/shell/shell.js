@@ -61,11 +61,19 @@ function drawLibrary() {
       el('button', { type: 'button', className: 'ranks', onclick: () => showLeaderboard(game) }, podium(), 'Leaderboard'));
   }));
 }
+const SHARED = { whatsapp: 'WhatsApp is opening. Choose your friend there and send it.', message: 'The invite is copied.', code: 'The code is copied.' };
+for (const button of $('share').children) {
+  button.onclick = async () => {
+    const { how } = button.dataset;
+    try { await desk.invite(current.game.id, $('code').textContent, how); $('shared').textContent = SHARED[how]; } catch { $('shared').textContent = 'That did not work. You can select the code and copy it.'; }
+  };
+}
 function waiting(title, text, code = '') {
   $('waitTitle').textContent = title;
   $('waitText').textContent = text;
   $('code').textContent = code;
-  $('code').hidden = !code;
+  $('code').hidden = $('share').hidden = !code;
+  $('shared').textContent = '';
   if ($('wait').hidden) { screen('wait'); $('waitTitle').focus(); }
 }
 function leave(text) {

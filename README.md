@@ -20,7 +20,7 @@ The player who starts a match chooses the rules: the board, easy or hard, heads-
 | Gemhold | 5, 6, 7, 10 | open field | rocks on the field |
 | Avioane & Bărcuțe | 8, 10, 12 | a miss beside a piece is "near" | a miss is only a miss |
 
-1. The match server pairs two players who have the same version of a game.
+1. The match server pairs two players who have the same version of a game. An invite can be copied, or opened in WhatsApp with one click; the player sends it.
 2. The two computers try a direct connection. If that fails, or a player hides their address, the server passes the messages on.
 3. Each player commits to a secret, then both reveal it. Together the secrets make the seed, so neither player can choose the board.
 4. Every move is signed by its player and checked by the game's rules on both computers. The rules the players agreed on are part of what they sign. The moves form a signed chain, so a referee can replay the match.
