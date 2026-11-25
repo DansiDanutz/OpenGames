@@ -13,6 +13,7 @@ export { T as THREE };
 export const isCalm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const FOV = 30, TILT = 0.5, FRAME = 0.62, SLOW_MS = 30, MAX_PARTICLES = 400;
+const NARROW = 640, FROM_ABOVE = 0.1, FRAME_ABOVE = 0.55;   // pixels, radians, cells
 const BACK = ['#2a1650', '#100a20'];
 const ease = (t) => 1 - (1 - t) ** 3;
 export const bounce = (t) => 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2;
@@ -86,7 +87,8 @@ export function createBoard(element, { frame = '#d9a441', floor = '#171028', til
   const at = (r, c, y = 0) => new T.Vector3(c - (n - 1) / 2, y, r - (n - 1) / 2);
   const redraw = () => { dirty = true; };
 
-  /* As close as the camera can be while the whole frame stays in view. */
+  /* As close as the camera can be while the whole frame stays in view. On a phone it looks from above, so that every
+     cell is as large as the screen allows. */
   function fit() {
     const { clientWidth: w, clientHeight: h } = element;
     if (!w || !h || !n) return;
@@ -95,12 +97,13 @@ export function createBoard(element, { frame = '#d9a441', floor = '#171028', til
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     let lift = 0;
-    const half = n / 2 + FRAME, corners = [-1, 1].flatMap((x) => [-1, 1].flatMap((z) => [0, 0.5].map((y) => new T.Vector3(x * half, y, z * half))));
+    const isNarrow = w <= NARROW && w <= h * 1.4, lean = isNarrow ? Math.min(tilt, FROM_ABOVE) : tilt, edge = isNarrow ? 0.998 : 0.97;
+    const half = n / 2 + (isNarrow ? FRAME_ABOVE : FRAME), corners = [-1, 1].flatMap((x) => [-1, 1].flatMap((z) => (isNarrow ? [0] : [0, 0.5]).map((y) => new T.Vector3(x * half, y, z * half))));
     const isInside = (d) => {
-      camera.position.set(0, Math.cos(tilt) * d, Math.sin(tilt) * d);
+      camera.position.set(0, Math.cos(lean) * d, Math.sin(lean) * d);
       camera.lookAt(0, 0, 0);
       camera.updateMatrixWorld();
-      return corners.every((v) => { const p = v.clone().project(camera); return Math.abs(p.x) < 0.97 && Math.abs(p.y) < 0.97; });
+      return corners.every((v) => { const p = v.clone().project(camera); return Math.abs(p.x) < edge && Math.abs(p.y) < edge; });
     };
     const closest = () => {
       let near = 2, far = 160;

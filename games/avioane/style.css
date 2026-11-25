@@ -14,4 +14,21 @@ body:not(.place) #mine{cursor:default}
 .place .left{display:none}
 #say{min-height:1.4em}
 .big.turn h2{color:var(--gold)}
-@media (max-width:640px){.boards{flex-direction:column}.big{flex:3}.small{flex:2}}
+.sides{display:none}
+.cards{flex:1;min-width:0;min-height:0;display:flex;gap:10px}
+/* On a phone each sea is a card over the whole page, and a swipe brings the other one. */
+@media (max-width:640px){
+body{padding:6px 0 10px}
+.boards{overflow:hidden}
+.boards h2{display:none}
+.cards{gap:0;transition:transform .28s ease-out}
+.cards.held{transition:none}
+.big,.small{flex:0 0 100%}
+.board{border-radius:0}
+body:not(.place) .sides{display:grid;grid-template-columns:1fr 1fr;width:100%}
+.sides button{min-height:44px;padding:8px;border:0;border-bottom:3px solid transparent;border-radius:0;background:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft)}
+.sides [aria-pressed=true]{border-color:var(--gold);color:#f6f1ff}
+body:not(.place)[data-side=mine] .cards{transform:translateX(-100%)}
+.left{flex-wrap:nowrap;justify-content:safe center;max-width:100%;overflow-x:auto;font-size:12px}.left li{padding:3px 7px;white-space:nowrap}
+}
+@media (max-width:640px) and (prefers-reduced-motion:reduce){.cards{transition:none}}

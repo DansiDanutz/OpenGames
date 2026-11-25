@@ -1,14 +1,14 @@
 /* Optional accounts: one person, several devices, the same points. An account is an email address and a name.
-   A device signs in with a code sent to that address, and proves with its own key that it is the device. There are
+   A device signs in with a code sent to that address or with Google (google.js), and proves with its own key that it is the device. There are
    no passwords and no cookies: the key of a device is what keeps it signed in. */
 import { DatabaseSync } from 'node:sqlite';
 import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { cleanName, verified } from '../app/shell/session.js';
 
 const MINUTE = 60_000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
-const LIMITS = { codeMs: 10 * MINUTE, tries: 5, codesPerHour: 3, codesPerDay: 6, mailsPerDay: 90, waiting: 5000, startsPerHour: 6, signatures: 50_000, devices: 10, skewMs: 5 * MINUTE };
+const LIMITS = { codeMs: 10 * MINUTE, ticketMs: 2 * MINUTE, tries: 5, codesPerHour: 3, codesPerDay: 6, mailsPerDay: 90, waiting: 5000, startsPerHour: 6, signatures: 50_000, devices: 10, skewMs: 5 * MINUTE };
 /* What a request may say, besides who, when and the signature. */
-const FIELDS = { start: ['email'], finish: ['email', 'code', 'name'], me: [], name: ['name'], leave: [], remove: [] };
+const FIELDS = { start: ['email'], finish: ['email', 'code', 'name'], google: [], enter: ['ticket', 'name'], me: [], name: ['name'], leave: [], remove: [] };
 const PUB = /^[0-9a-f]{64}$/;
 /* Simple addresses only: no display names, quotes, spaces or lists. */
 const EMAIL = /^[a-z0-9._+-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
@@ -18,8 +18,8 @@ export const cleanEmail = (v) => {
 };
 const newId = () => randomBytes(32).toString('hex');
 
-/* mail: async ({ to, code }) => void. host: () => the name this server is asked by. moved: ({ from, to }) joins the points of a device to an account. */
-export function createAccounts({ file, mail, host, limits = {}, clock = Date.now, moved = () => {}, removed = () => {} }) {
+/* mail: async ({ to, code }) => void. google: see google.js. Both are optional. host: () => the name this server is asked by. moved: ({ from, to }) joins the points of a device to an account. */
+export function createAccounts({ file, mail = null, google = null, host, limits = {}, clock = Date.now, moved = () => {}, removed = () => {} }) {
   const L = { ...LIMITS, ...limits };
   const db = new DatabaseSync(file);
   db.exec(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 3000; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;
@@ -38,6 +38,8 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
   };
   const secret = randomBytes(32);
   const codes = new Map();                             // email and device -> { mac, until, tries }
+  const leaving = new Map();                           // state -> { pub, verifier, nonce, until }: on the way to Google
+  const tickets = new Map();                           // ticket -> { pub, email, until }: back from Google
   const used = new Map();                              // signature -> when it may be forgotten
   const starts = new Map();                            // internet address -> times of the last hour, in memory only
   const sent = new Map();                              // email -> times; kept in memory for a day
@@ -50,7 +52,7 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
 
   function sweep(now) {
     for (const [sig, until] of used) { if (until > now) break; used.delete(sig); }   // oldest first
-    for (const [key, c] of codes) if (c.until <= now) codes.delete(key);
+    for (const all of [codes, leaving, tickets]) for (const [key, x] of all) if (x.until <= now) all.delete(key);
     for (const [email, times] of sent) {
       const recent = times.filter((t) => t > now - DAY);
       if (recent.length) sent.set(email, recent); else sent.delete(email);
@@ -67,14 +69,34 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
     used.set(sig, clock() + 2 * L.skewMs);               // a request works once
     return true;
   }
+  /* Nobody starts signing in too often. */
+  function mayStart(address, now) {
+    const mine = (starts.get(address) ?? []).filter((t) => t > now - HOUR);
+    if (mine.length >= L.startsPerHour) return false;
+    starts.set(address, [...mine, now]);
+    return true;
+  }
+  function enter(pub, email, name, now) {
+    const known = q.byEmail.get(email), account = known ?? { id: newId(), name: cleanName(name) };
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (!known) q.make.run(account.id, email, account.name, now);
+      q.add.run(pub, account.id, now);
+      q.oldest.run(account.id, account.id, L.devices);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    moved({ from: pub, to: account.id });
+    return yes(view({ ...account, email }));
+  }
   const actions = {
     /* The answer is the same whether the address is known or not. */
     async start(b, address) {
       const email = cleanEmail(b.email), now = clock();
       if (!email) return no('bad_email');
-      const mine = (starts.get(address) ?? []).filter((t) => t > now - HOUR);
-      if (mine.length >= L.startsPerHour) return no('too_many', 429);
-      starts.set(address, [...mine, now]);
+      if (!mayStart(address, now)) return no('too_many', 429);
       const times = sent.get(email) ?? [];
       if (times.filter((t) => t > now - HOUR).length >= L.codesPerHour || times.length >= L.codesPerDay) return no('too_many', 429);
       if (mails.length >= L.mailsPerDay || (codes.size >= L.waiting)) return no('busy', 503);
@@ -97,19 +119,22 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
       if (++c.tries > L.tries) { codes.delete(key); return no('wrong_code'); }
       if (!timingSafeEqual(c.mac, macOf(email, b.pub, String(b.code)))) return no('wrong_code');
       codes.delete(key);
-      const known = q.byEmail.get(email), account = known ?? { id: newId(), name: cleanName(b.name) };
-      db.exec('BEGIN IMMEDIATE');
-      try {
-        if (!known) q.make.run(account.id, email, account.name, now);
-        q.add.run(b.pub, account.id, now);
-        q.oldest.run(account.id, account.id, L.devices);
-        db.exec('COMMIT');
-      } catch (error) {
-        db.exec('ROLLBACK');
-        throw error;
-      }
-      moved({ from: b.pub, to: account.id });
-      return yes(view({ ...account, email }));
+      return enter(b.pub, email, b.name, now);
+    },
+    async google(b, address) {
+      const now = clock();
+      if (!mayStart(address, now)) return no('too_many', 429);
+      if (leaving.size >= L.waiting) return no('busy', 503);
+      const { state, verifier, nonce, url } = google.begin();
+      leaving.set(state, { pub: b.pub, verifier, nonce, until: now + L.codeMs });
+      return yes({ url });
+    },
+    /* Only the device that left for Google can use what came back: a link sent to somebody else signs nobody in. */
+    async enter(b) {
+      const t = typeof b.ticket === 'string' ? tickets.get(b.ticket) : null, now = clock();
+      if (!t || t.until <= now || t.pub !== b.pub) return no('wrong_device');
+      tickets.delete(b.ticket);
+      return enter(b.pub, t.email, b.name, now);
     },
     async me(b) {
       const a = q.byPub.get(b.pub);
@@ -136,8 +161,21 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
       return yes({ signedIn: false });
     },
   };
+  const OF = { start: mail, finish: mail, google, enter: google };
   return {
-    has: (action) => Object.hasOwn(actions, action),
+    ways: { email: !!mail, google: !!google },
+    has: (action) => Object.hasOwn(actions, action) && (!Object.hasOwn(OF, action) || !!OF[action]),
+    /* Back from Google, in a browser. Resolves to a ticket for the device that left, or null. */
+    async cameBack({ state, code }) {
+      const now = clock(), left = typeof state === 'string' ? leaving.get(state) : null;
+      leaving.delete(state);
+      if (!left || left.until <= now || typeof code !== 'string' || !code || code.length > 2048 || tickets.size >= L.waiting) return null;
+      const email = cleanEmail(await google.finish({ code, verifier: left.verifier, nonce: left.nonce }));
+      if (!email) return null;
+      const ticket = newId();
+      tickets.set(ticket, { pub: left.pub, email, until: clock() + L.ticketMs });
+      return ticket;
+    },
     async ask(action, body, address = '') {
       if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.pub !== 'string' || !PUB.test(body.pub)) return no('bad_request');
       if (!Object.keys(body).every((k) => ['pub', 'at', 'sig', ...FIELDS[action]].includes(k))) return no('bad_request');

@@ -38,8 +38,8 @@ test('STUN answers nothing else', () => {
 });
 const KEY = `shikaku@${'a'.repeat(64)}`;
 const connect = (s, log) => new Promise((resolve) => { const ws = new WebSocket(`ws://127.0.0.1:${s.port}`); ws.onmessage = ({ data }) => log.push(JSON.parse(data).t); ws.onclose = () => log.push('closed'); ws.onopen = () => resolve(ws); });
-test('leaving cannot lift the time limit of a pair', async () => {
-  const s = await startMatchServer({ limits: { pairMs: 250 } }), logs = [[], []];
+test('whoever left a room is cut off', async () => {
+  const s = await startMatchServer({ limits: { quietMs: 250 } }), logs = [[], []];
   try {
     const all = [await connect(s, logs[0]), await connect(s, logs[1])];
     all[0].send(JSON.stringify({ t: 'find', key: KEY }));

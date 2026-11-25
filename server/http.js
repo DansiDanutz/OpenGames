@@ -1,12 +1,16 @@
 /* Over plain HTTP: GET /leaderboard?game=<id>, POST /result?ticket=<id>, GET /health, and the public pages (site.js). */
 const MAX_RESULT_BYTES = 4 * 1024 * 1024, MAX_ACCOUNT_BYTES = 4096;
+const MAX_TICKETS = 200_000;
 const GAME = /^[a-z0-9-]{1,40}$/;
 
 /* A ticket names one match this server introduced. Only such a match can be ranked. */
-export function createTickets(lifeMs) {
+export function createTickets(lifeMs, max = MAX_TICKETS) {
   const all = new Map();
   return {
-    add: (ticket, { key, pubs }) => all.set(ticket, { key, pubs, until: Date.now() + lifeMs, pending: null, outcome: null }),
+    add(ticket, { key, pubs }) {
+      if (all.size >= max) all.delete(all.keys().next().value);
+      all.set(ticket, { key, pubs, until: Date.now() + lifeMs, pending: null, outcome: null });
+    },
     get: (ticket) => { const t = all.get(ticket); return t && t.until > Date.now() ? t : null; },
     sweep: () => { const now = Date.now(); for (const [id, t] of all) if (t.until <= now) all.delete(id); },
   };
@@ -67,6 +71,13 @@ async function takeAccount({ req, res, action, from, limits, accounts }) {
   const out = await accounts.ask(action, body, from.address);
   return reply(res, out.status, out.body);
 }
+/* Google sends the browser here. The ticket goes on in the fragment, which no server and no log ever sees. */
+async function backFromGoogle({ res, url, from, limits, accounts }) {
+  if (++from.accounts > limits.accountsPerMinute) return reply(res, 429, { error: 'too_many' });
+  const ticket = await accounts.cameBack({ state: url.searchParams.get('state'), code: url.searchParams.get('code') })
+    .catch((error) => { console.error('Google sign-in failed:', error.message); return null; });
+  return send(res, { status: 302, headers: { location: `/play#google=${ticket ?? 'failed'}`, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', connection: 'close' }, body: '' });
+}
 export function answerHttp(context) {
   const { req, res, from, limits, leaderboard, site, accounts } = context;
   if (!URL.canParse(req.url, 'http://server')) return reply(res, 400, { error: 'bad_request' });
@@ -74,7 +85,8 @@ export function answerHttp(context) {
   const fail = (error) => { console.error('A request failed:', error.message); reply(res, 500, { error: 'failed' }); };
   req.on('error', () => res.destroy());
   if (req.method === 'GET' && url.pathname === '/health') return reply(res, 200, { ok: true });
-  if (req.method === 'GET' && url.pathname === '/account') return reply(res, 200, { on: !!accounts });
+  if (req.method === 'GET' && url.pathname === '/account') return reply(res, 200, { on: !!accounts, ...accounts?.ways });
+  if (accounts?.ways.google && req.method === 'GET' && url.pathname === '/account/google') return backFromGoogle({ ...context, url }).catch(fail);
   const action = accounts && req.method === 'POST' && /^\/account\/([a-z]{1,20})$/.exec(url.pathname)?.[1];
   if (action && accounts.has(action)) return takeAccount({ ...context, action }).catch(fail);
   if (site && req.method === 'GET') {

@@ -76,16 +76,16 @@ function dashboard(name, games, { stats, ranked }) {
 ${games.map((g) => dashboardGame(g, stats, ranked)).join('')}<h2>What you earn</h2><p>Support and sponsors pay you on your own pages, so your income is only shown there. OpenGames takes 0%. Views of a sponsor line are not counted; show a sponsor the matches above.</p>`);
 }
 
-const privacy = (contact) => page('Privacy on OpenGames', 'What OpenGames keeps and why.', `<h1>Privacy</h1><p class="lead">You can play without an account. This page says what is kept, and why.</p>
+const privacy = (contact, ways) => page('Privacy on OpenGames', 'What OpenGames keeps and why.', `<h1>Privacy</h1><p class="lead">You can play without an account. This page says what is kept, and why.</p>
 <h2>Without an account</h2><ul><li>Your name, your results and a key are kept on your own device.</li><li>A ranked match keeps the name you chose, a public key and the result on our server, to show the leaderboard.</li><li>We count how often each game is played, as one number per day.</li><li>Your internet address is used to connect you and to stop abuse. It is not written to our database. In a direct match the other player's device sees it; you can turn that off under “Hide my internet address”.</li></ul>
-<h2>With an account</h2><ul><li>We keep your email address, the name you chose and the public keys of your devices, so your points follow you. Nothing else.</li><li>We use the address only to send sign-in codes. No newsletters and no advertising.</li><li>Codes are sent by Resend, which receives your address for that.</li><li>It is kept until you delete the account. “Delete my account” in the app removes the address, the devices and your points at once.</li></ul>
+<h2>With an account</h2><ul><li>We keep your email address, the name you chose and the public keys of your devices, so your points follow you. Nothing else.</li><li>We use the address only to sign you in. No newsletters and no advertising.</li>${ways.email ? '<li>Codes are sent by Resend, which receives your address for that.</li>' : ''}${ways.google ? '<li>If you sign in with Google, Google tells us your email address and learns that you use OpenGames. We ask Google for nothing else and keep no access to your Google account.</li>' : ''}<li>It is kept until you delete the account. “Delete my account” in the app removes the address, the devices and your points at once.</li></ul>
 <h2>Ask or complain</h2><p>${escape(contact)}. You can ask what we keep about you, correct it or have it removed, and you can complain to your data protection authority.</p>`);
 const CONTENT = { 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', connection: 'close' };
 const html = (status, body) => ({ status, headers: { ...CONTENT, 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': PAGE_POLICY }, body });
 const part = (text) => { try { return decodeURIComponent(text); } catch { return null; } };
 
 /* games: [{ id, name, author, files, ... }] from readLibrary. Returns the answer to a path, or null. */
-export function createSite({ games, stats = null, ranked = null, contact = null }) {
+export function createSite({ games, stats = null, ranked = null, contact = null, ways = { email: true, google: false } }) {
   const find = (id) => games.find((g) => g.id === id);
   const routes = [
     [/^\/$/, () => html(200, home(games))],
@@ -96,7 +96,7 @@ export function createSite({ games, stats = null, ranked = null, contact = null 
       const g = find(id);
       return g && { status: 200, headers: { ...CONTENT, 'content-type': TYPES[path.extname(g.icon)], 'cache-control': 'max-age=300', 'content-security-policy': ICON_POLICY }, body: g.files.get(g.icon) };
     }],
-    ...(contact ? [[/^\/privacy$/, () => html(200, privacy(contact))]] : []),
+    ...(contact ? [[/^\/privacy$/, () => html(200, privacy(contact, ways))]] : []),
     [/^\/creators$/, () => html(200, creators(games))],
     [/^\/creators\/([^/]{1,400})$/, (text) => {
       const name = part(text), own = games.filter((g) => g.author === name);

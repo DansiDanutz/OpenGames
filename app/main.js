@@ -2,7 +2,7 @@ import { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, net, p
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { inviteText, whatsappUrl } from './invite.js';
+import { inviteText, whatsappUrl } from './shell/invite.js';
 import { TYPES, readKit, readLibrary, resolveFile } from './library.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
@@ -143,10 +143,10 @@ async function openLink({ id, kind } = {}) {
 }
 shellCall('link', openLink);
 /* Copies an invite, or opens it in WhatsApp, where the player picks the friend and sends it. */
-shellCall('invite', async ({ id, code, how } = {}) => {
+shellCall('invite', async ({ id, code, how, terms, name } = {}) => {
   const game = games.find((g) => g.id === id);
   if (!game) throw new Error('unknown game');
-  const text = inviteText({ game, code, server: SERVER });
+  const text = inviteText({ game, code, server: SERVER, terms, name });
   if (how === 'code') clipboard.writeText(code);
   else if (how === 'message') clipboard.writeText(text);
   else if (how === 'whatsapp') await shell.openExternal(whatsappUrl(text));
@@ -163,7 +163,11 @@ shellCall('leaderboard', (game) => {
   if (!games.some((g) => g.id === game)) throw new Error('unknown game');
   return ask(`/leaderboard?game=${game}`);
 });
-shellCall('account:on', async () => (await ask('/account')).on === true);
+// Google does not sign anybody in inside another app, so the window offers the code by email.
+shellCall('account:on', async () => {
+  const { on, email } = await ask('/account');
+  return on === true && email === true ? { email: true, google: false } : null;
+});
 const ACCOUNT_ACTIONS = ['start', 'finish', 'me', 'name', 'leave', 'remove'], MAX_ACCOUNT = 4096;
 shellCall('account', async ({ action, body } = {}) => {
   const text = JSON.stringify(body) ?? '';

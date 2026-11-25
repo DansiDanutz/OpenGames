@@ -167,7 +167,7 @@ test('the server offers sign-in only when it is set up, within limits', async ()
   await off.close();
   const s = setUp(), on = await startMatchServer({ accounts: s.accounts, limits: { accountsPerMinute: 4 }, site: createSite({ games: [], contact: 'privacy@example.org <b>' }) });
   const post = (action, body) => fetch(`http://127.0.0.1:${on.port}/account/${action}`, { method: 'POST', body });
-  assert.deepEqual(await (await fetch(`http://127.0.0.1:${on.port}/account`)).json(), { on: true });
+  assert.deepEqual(await (await fetch(`http://127.0.0.1:${on.port}/account`)).json(), { on: true, email: true, google: false });
   assert.equal((await post('me', 'x')).status, 400);
   assert.equal((await post('me', `"${'x'.repeat(5000)}"`)).status, 413);
   assert.equal((await post('constructor', '{}')).status, 404);

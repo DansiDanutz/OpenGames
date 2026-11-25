@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('desk', {
   accountOn: () => ipcRenderer.invoke('account:on'),
   account: (action, body) => ipcRenderer.invoke('account', { action, body }),
   openLink: (id, kind) => ipcRenderer.invoke('link', { id, kind }),
-  invite: (id, code, how) => ipcRenderer.invoke('invite', { id, code, how }),
+  invite: (id, code, how, says) => ipcRenderer.invoke('invite', { ...says, id, code, how }),
   onGame: (fn) => ipcRenderer.on('game:message', (_event, { token, msg }) => fn(token, msg)),
   onGameGone: (fn) => ipcRenderer.on('game:gone', () => fn()),
 });

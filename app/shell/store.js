@@ -17,6 +17,16 @@ export const account = {
   get value() { return read('account', null); },
   set value(v) { if (v) write('account', v); else localStorage.removeItem('account'); },
 };
+/* The invite somebody came with, while they sign in with Google. */
+export const myInvite = {
+  get value() { return sessionStorage.getItem('invite') ?? ''; },
+  set value(v) { if (v) sessionStorage.setItem('invite', v); else sessionStorage.removeItem('invite'); },
+};
+/* The room this window is in, so that a page a phone has thrown away comes back to it. */
+export const myRoom = {
+  get value() { try { return JSON.parse(sessionStorage.getItem('room')); } catch { return null; } },
+  set value(v) { if (v) sessionStorage.setItem('room', JSON.stringify(v)); else sessionStorage.removeItem('room'); },
+};
 /* The last rules a player chose for a game. */
 export const lastTerms = (gameId) => read(`terms:${gameId}`, {});
 export const saveTerms = (gameId, terms) => write(`terms:${gameId}`, terms);

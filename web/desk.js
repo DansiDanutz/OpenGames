@@ -1,6 +1,6 @@
 /* What the app's main process does on a computer, done by the browser: opens games in a locked frame, asks the
    match server, copies invites, and offers to install the app. */
-import { inviteText, whatsappUrl } from '/app/invite.js';
+import { inviteText, whatsappUrl } from '/app/shell/invite.js';
 
 const MAX_MESSAGE = 32 * 1024, MAX_PER_SECOND = 200;
 let library = [], frame = null, token = null, second = 0, used = 0;
@@ -58,7 +58,15 @@ globalThis.desk = {
   },
   async toGame(mine, msg) { if (frame && mine === token) frame.contentWindow.postMessage(msg, '*'); },
   submitResult: (transcript) => ask(`/result?ticket=${encodeURIComponent(transcript.terms.ticket)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(transcript) }, 60_000),
-  accountOn: async () => (await ask('/account')).on === true,
+  async accountOn() {
+    const { on, email, google } = await ask('/account');
+    return on === true ? { email: email === true, google: google === true } : null;
+  },
+  /* To Google and back to this page. */
+  toGoogle(url) {
+    if (new URL(url).origin !== 'https://accounts.google.com') throw new Error('not Google');
+    location.assign(url);
+  },
   async account(action, body) {
     const res = await fetch(`/account/${encodeURIComponent(action)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000), credentials: 'omit', redirect: 'error' });
     return { ok: res.ok, body: await res.json() };
@@ -69,8 +77,8 @@ globalThis.desk = {
     if (!url) throw new Error('unknown link');
     if (confirm(`Open ${new URL(url).hostname}?\n\n${url}\n\nThis page does not belong to OpenGames.`)) open(url, '_blank', 'noopener,noreferrer');
   },
-  async invite(id, code, how) {
-    const text = inviteText({ game: find(id), code, server: location.origin });
+  async invite(id, code, how, says) {
+    const text = inviteText({ game: find(id), code, server: location.origin, ...says });
     if (how === 'whatsapp') open(whatsappUrl(text), '_blank', 'noopener,noreferrer');
     else await navigator.clipboard.writeText(how === 'code' ? code : text);
   },
