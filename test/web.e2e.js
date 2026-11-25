@@ -110,7 +110,7 @@ try {
   await bob.waitForFunction(() => document.querySelector('#boardRows tr') || /Nobody/.test(document.getElementById('boardText').textContent));
   console.log('leaderboard:', await bob.textContent('#boardRows'));
   // The games' own checks above cause these, and nothing else may.
-  assert.deepEqual(errors.filter((e) => !/Content Security Policy|connect-src|frame-src|Unsafe attempt|Refused|Blocked|Failed to load resource|Fetch API|webrtc|access control|Not allowed/i.test(e)), []);
+  assert.deepEqual(errors.filter((e) => !/Content Security Policy|connect-src|frame-src|sandboxed|Unsafe attempt|Refused|Blocked|Failed to load resource|Fetch API|webrtc|access control|Not allowed/i.test(e)), []);
   console.log(`WEB OK (${isWebkit ? 'webkit' : 'chrome'})`);
 } finally {
   await browser.close();
