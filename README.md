@@ -62,10 +62,12 @@ Or use `deploy/`: `PLAY_DOMAIN=play.example.org docker compose -f deploy/compose
 
 Node 26 or newer. Put a proxy with TLS in front of it, so players use `wss://`. `TRUST_PROXY` is the number of proxies in front; leave it at 0 without one, or anybody can pretend to be another address. `STUN_PORT` (UDP, not behind the proxy) lets players find a direct connection over the internet. Without `DATA_DIR` there are no leaderboards and no counts. Back up `leaderboard.db` and `stats.db`. `GET /health` answers when the server is up. On one computer, 3000 players sent 5,850 messages a second through the server with none lost (99% under 30 ms, 95 MB of memory).
 
-The server also has public pages without scripts: `/` (the games), `/games/<id>` (a page to share), `/creators` (how to start) and `/creators/<author>` (a dashboard with matches per day). For play it keeps one number per game and day, nothing about players. A match counts when two players at different addresses stay for a minute, at most 20 a day per address and game; play against the computer is never counted.
+The server also has public pages without scripts: `/` (the games), `/games/<id>` (a page to share), `/creators` (how to start) and `/creators/<author>` (a dashboard with matches per day). For play it keeps one number per game and day, nothing about players. A match counts when two players at different addresses stay for a minute, at most 20 a day per address and game; play against the computer is never counted. Visits are counted the same way: each time `/`, `/play`, `/creators` or a `/games/<id>` page is shown adds one to that page's number for the UTC day. No address, browser, cookie or anything else about the visitor is kept.
 
 ## Sign-in
 Optional, with Google or with an email code; each is offered only when it is set up. With Google the page leaves for Google and comes back (no script of Google runs here); only addresses Google itself is in charge of count, and only the device that left can use what comes back. The Mac and Windows apps offer the email code only. With a code the player types an email address and the six digits sent to it. The device then stays signed in, and all devices of an account share a name and points. There are no passwords or cookies: every request is signed with the device's own key. The server keeps the address, the name and the public keys of the devices, until the player deletes the account. It is off unless `PRIVACY_CONTACT` and `PLAY_DOMAIN` are set, with `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (redirect address `https://<PLAY_DOMAIN>/account/google`), or `RESEND_API_KEY` and `MAIL_FROM`, or both; then `/privacy` is shown too, which the operator has to read and answer for. Back up `accounts.db` and keep it private. A server sends at most 90 codes a day, so many requests can use them up. With `deploy/compose.traefik.yml`, put these settings in a file only you can read and set `MAIL_ENV` to its path.
+
+**Admin view.** `ADMIN_EMAILS` (addresses separated by commas; empty means nobody) names the accounts that see **Admin** in the Account panel of the browser app: visits per day and page for 30 days, matches per game, the number of accounts and ranked players, and public facts from GitHub (stars, forks, watchers, open and recently merged pull requests). The server checks the address on every signed request, so removing it from the list is enough. An address that is not valid stops the server. GitHub is read without a token, at most every ten minutes; when it fails, the rest is still shown. The Mac and Windows apps do not show the admin view.
 
 ## Build the app
 ```sh
@@ -86,7 +88,7 @@ The server is built in. The packed app checks its own files, cannot be run as pl
 - **Very slow graphics:** games lower their own detail, but they need WebGL 2.
 
 ## Tests
-`pnpm test` (engine, series, session, server, site, leaderboard, network, check), `pnpm test:app` (real windows, and a phone's screen in Chrome; `node test/web.e2e.js webkit` for an iPhone's), `node test/packed.e2e.js <program>` (the packed app), `pnpm check`.
+`pnpm test` (engine, series, session, server, site, visits, admin, github, leaderboard, network, check), `pnpm test:app` (real windows, and a phone's screen in Chrome; `node test/web.e2e.js webkit` for an iPhone's), `node test/packed.e2e.js <program>` (the packed app), `pnpm check`.
 
 ## Licenses
 The app and server: AGPL-3.0. The game kit (`kit/`) and the three games: MIT. three.js: MIT.
