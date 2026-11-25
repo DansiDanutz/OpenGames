@@ -55,7 +55,9 @@ DATA_DIR=/var/lib/opengames STUN_PORT=3478 HOST=0.0.0.0 PORT=4310 TRUST_PROXY=1 
 ```
 Or use `deploy/`: `PLAY_DOMAIN=play.example.org docker compose -f deploy/compose.yml up -d --build` runs the server behind Caddy, which gets the certificate. Open ports 80, 443 and 3478/udp. If Traefik already owns those ports, use `deploy/install-traefik.sh` instead.
 
-Node 26 or newer. Put a proxy with TLS in front of it, so players use `wss://`. `TRUST_PROXY` is the number of proxies in front; leave it at 0 without one, or anybody can pretend to be another address. `STUN_PORT` (UDP, not behind the proxy) lets players find a direct connection over the internet. Without `DATA_DIR` there are no leaderboards. Back up `leaderboard.db`. `GET /health` answers when the server is up. On one computer, 3000 players sent 5,850 messages a second through the server with none lost (99% under 30 ms, 95 MB of memory).
+Node 26 or newer. Put a proxy with TLS in front of it, so players use `wss://`. `TRUST_PROXY` is the number of proxies in front; leave it at 0 without one, or anybody can pretend to be another address. `STUN_PORT` (UDP, not behind the proxy) lets players find a direct connection over the internet. Without `DATA_DIR` there are no leaderboards and no counts. Back up `leaderboard.db` and `stats.db`. `GET /health` answers when the server is up. On one computer, 3000 players sent 5,850 messages a second through the server with none lost (99% under 30 ms, 95 MB of memory).
+
+The server also has public pages without scripts: `/` (the games), `/games/<id>` (a page to share), `/creators` (how to start) and `/creators/<author>` (a dashboard with matches per day). It keeps one number per game and day, nothing about players. A match counts when two players at different addresses stay for a minute, at most 20 a day per address and game; play against the computer is never counted.
 
 ## Build the app
 ```sh
@@ -76,7 +78,7 @@ The server is built in. The packed app checks its own files, cannot be run as pl
 - **Very slow graphics:** games lower their own detail, but they need WebGL 2.
 
 ## Tests
-`pnpm test` (engine, series, session, server, leaderboard, network, check), `pnpm test:app` (real windows), `node test/packed.e2e.js <program>` (the packed app), `pnpm check`.
+`pnpm test` (engine, series, session, server, site, leaderboard, network, check), `pnpm test:app` (real windows), `node test/packed.e2e.js <program>` (the packed app), `pnpm check`.
 
 ## Licenses
 The app and server: AGPL-3.0. The game kit (`kit/`) and the three games: MIT. three.js: MIT.

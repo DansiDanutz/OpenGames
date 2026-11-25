@@ -1,4 +1,4 @@
-/* The leaderboards, over plain HTTP: GET /leaderboard?game=<id>, POST /result?ticket=<id>, GET /health. */
+/* Over plain HTTP: GET /leaderboard?game=<id>, POST /result?ticket=<id>, GET /health, and the public pages (site.js). */
 const MAX_RESULT_BYTES = 4 * 1024 * 1024;
 const GAME = /^[a-z0-9-]{1,40}$/;
 
@@ -15,6 +15,11 @@ const reply = (res, status, body) => {
   if (res.headersSent || res.destroyed) return;
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', connection: 'close' });
   res.end(JSON.stringify(body));
+};
+const send = (res, { status, headers, body }) => {
+  if (res.destroyed) return;
+  res.writeHead(status, headers);
+  res.end(body);
 };
 async function readBody(req, ms) {
   const parts = [], slow = setTimeout(() => req.destroy(new Error('it arrived too slowly')), ms);
@@ -54,12 +59,18 @@ async function takeResult({ req, res, url, from, limits, tickets, leaderboard })
   }
 }
 export function answerHttp(context) {
-  const { req, res, from, limits, leaderboard } = context;
+  const { req, res, from, limits, leaderboard, site } = context;
   if (!URL.canParse(req.url, 'http://server')) return reply(res, 400, { error: 'bad_request' });
   const url = new URL(req.url, 'http://server');
   const fail = (error) => { console.error('A request failed:', error.message); reply(res, 500, { error: 'failed' }); };
   req.on('error', () => res.destroy());
   if (req.method === 'GET' && url.pathname === '/health') return reply(res, 200, { ok: true });
+  if (site && req.method === 'GET') {
+    try {
+      const answer = site(url.pathname);
+      if (answer) return ++from.reads > limits.readsPerMinute ? reply(res, 429, { error: 'too_many' }) : send(res, answer);
+    } catch (error) { return fail(error); }
+  }
   if (!leaderboard) return reply(res, 404, { error: 'not_found' });
   if (req.method === 'POST' && url.pathname === '/result') return takeResult({ ...context, url }).catch(fail);
   if (req.method === 'GET' && url.pathname === '/leaderboard') {

@@ -1,5 +1,5 @@
 /* Finds two players and introduces their computers. Matchmaking keeps no accounts
-   and stores nothing; only ranked results are kept (leaderboard.js). When the computers cannot reach each other
+   and stores nothing; only ranked results (leaderboard.js) and how often a game is played (stats.js) are kept. When the computers cannot reach each other
    directly, it passes their messages on. */
 import { WebSocketServer } from 'ws';
 import { createServer } from 'node:http';
@@ -9,7 +9,7 @@ import { createTickets, answerHttp } from './http.js';
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LIMITS = { maxBytes: 26 * 1024, perSecond: 80, bytesPerSecond: 64 * 1024, buffered: 256 * 1024, perAddress: 20, opensPerMinute: 60,
   waitMs: 10 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, pingMs: 30 * 1000, minuteMs: 60 * 1000,
-  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, findsPerMinute: 30, bodyMs: 25_000 };
+  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, findsPerMinute: 30, bodyMs: 25_000, playedMs: 60 * 1000 };
 const CODE_LENGTH = 8;
 const PUB = /^[0-9a-f]{64}$/;
 const KEY = /^[a-z0-9-]{1,40}@[0-9a-f]{64}$/;         // game@hash: only equal versions meet
@@ -25,7 +25,7 @@ export function addressKey(ip) {
 }
 
 /* proxies: how many trusted proxies stand in front of this server. */
-export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, limits = {}, leaderboard = null } = {}) {
+export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, limits = {}, leaderboard = null, stats = null, site = null } = {}) {
   const L = { ...LIMITS, ...limits };
   const open = new Map();                              // code -> waiting player
   const queues = new Map();                            // game@hash -> waiting player
@@ -73,6 +73,12 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     const timer = setTimeout(() => { host.terminate(); guest.terminate(); }, L.pairMs);
     timer.unref();
     host.og.timer = guest.og.timer = timer;
+    if (stats) {
+      host.og.played = setTimeout(() => {
+        try { stats.played(key, [host.og.address, guest.og.address]); } catch (error) { console.error('A match was not counted:', error.message); }
+      }, L.playedMs);
+      host.og.played.unref();
+    }
     tell(host, { t: 'paired', host: true, ticket: canRank ? ticket : null, pub: canRank ? pubs[1] : null });
     tell(guest, { t: 'paired', host: false, ticket: canRank ? ticket : null, pub: canRank ? pubs[0] : null });
   }
@@ -137,11 +143,12 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       clearTimeout(ws.og.quiet);
       stopWaiting(ws);
       const { peer } = ws.og;
+      clearTimeout(ws.og.played); clearTimeout(peer?.og.played);
       if (peer) { peer.og.peer = null; ws.og.peer = null; tell(peer, { t: 'gone' }); }
       from.count--;
     });
   });
-  http.on('request', (req, res) => answerHttp({ req, res, from: seen(addressOf(req)), limits: L, tickets, leaderboard }));
+  http.on('request', (req, res) => answerHttp({ req, res, from: seen(addressOf(req)), limits: L, tickets, leaderboard, site }));
   const ping = setInterval(() => {
     tickets.sweep();
     for (const [key, a] of addresses) if (!a.count && Date.now() - a.since > L.minuteMs) addresses.delete(key);
