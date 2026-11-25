@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { CREATOR_FILE, readCreator } from './creator.js';
 
 export const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg' };
@@ -71,7 +72,10 @@ export function readLibrary(root, kit, approved = null) {
       if (approved && approved[e.name] !== own) throw new Error('this version was not approved');
       const { id, name, version, author, license, summary, minutes, page, icon, rules, howto, options = [] } = readManifest(dir);
       if (id !== e.name) throw new Error('the folder must have the same name as the id');
-      return [{ id, name, version, author, license, summary, minutes, howto, options, page, icon, rules, hash: sha256(`${own}|${shared.hash}`), dir, files }];
+      // What a creator says about support changes nothing in a match: it is approved, but the game never sees it.
+      const played = new Map([...files].filter(([f]) => f !== CREATOR_FILE));
+      return [{ id, name, version, author, license, summary, minutes, howto, options, page, icon, rules, ...readCreator(files.get(CREATOR_FILE)),
+        hash: sha256(`${hashFiles(played)}|${shared.hash}`), dir, files: played }];
     } catch (error) {
       console.error(`The game in ${e.name} was left out: ${error.message}`);
       return [];

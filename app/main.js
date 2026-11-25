@@ -1,4 +1,4 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, net, protocol, session } from 'electron';
+import { app, BrowserWindow, WebContentsView, dialog, ipcMain, net, protocol, session, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -124,6 +124,23 @@ shellCall('game:bounds', (b) => {
   if (!gameView || ![b?.x, b?.y, b?.width, b?.height].every((n) => Number.isFinite(n) && n >= 0)) return;
   gameView.setBounds({ x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) });
 });
+/* Opens a creator's page or a sponsor in the person's own browser, after they said yes. The window only names
+   the game: the address comes from the approved files. */
+let asking = false;
+async function openLink({ id, kind } = {}) {
+  const game = games.find((g) => g.id === id), url = kind === 'support' ? game?.support : kind === 'sponsor' ? game?.sponsor?.url : null;
+  if (!url) throw new Error('unknown link');
+  if (asking) return false;
+  asking = true;
+  try {
+    const { response } = await dialog.showMessageBox(win, { type: 'question', buttons: ['Open in browser', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+      message: `Open ${new URL(url).hostname}?`, detail: `${url}\n\nThis page does not belong to OpenGames. ${kind === 'support' ? `Payments there go to the creator of ${game.name}.` : `${game.sponsor.name} pays the creator of ${game.name} for this line.`}` });
+    if (response !== 0) return false;
+    await shell.openExternal(url);
+    return true;
+  } finally { asking = false; }
+}
+shellCall('link', openLink);
 /* Leaderboards live on the match server. The window itself never opens a web address. */
 const HTTP = SERVER.replace(/^ws/, 'http'), ASK_MS = 15_000, RESULT_MS = 60_000, MAX_RESULT = 4 * 1024 * 1024;
 async function ask(where, init = {}, ms = ASK_MS) {

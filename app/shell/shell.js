@@ -35,6 +35,14 @@ function podium() {
   return svg;
 }
 const played = (r, where) => (r.wins + r.losses + r.draws ? `You won ${r.wins} and lost ${r.losses} ${where}.` : '');
+function creatorLines(game) {
+  const open = (kind) => () => desk.openLink(game.id, kind).catch(() => notice('The browser did not open.'));
+  return [
+    ...(game.support ? [el('button', { type: 'button', className: 'link', textContent: 'Support the creator', onclick: open('support') })] : []),
+    ...(game.sponsor ? [el('p', { className: 'sponsor' }, el('span', { textContent: 'Sponsor' }),
+      el('button', { type: 'button', className: 'link', textContent: `${game.sponsor.name}: ${game.sponsor.text}`, onclick: open('sponsor') }))] : []),
+  ];
+}
 function drawLibrary() {
   $('games').replaceChildren(...library.map((game) => {
     const history = [played(record(game.id), 'on this computer'), played(record(soloKey(game.id)), 'against the computer')].filter(Boolean).join(' ');
@@ -45,7 +53,7 @@ function drawLibrary() {
     return el('li', {}, el('img', { className: 'art', src: `/icons/${game.id}`, alt: '' }),
       el('div', { className: 'about' }, el('h3', { textContent: game.name }), el('p', { textContent: game.summary }),
         el('p', { className: 'facts', textContent: `1 or 2 players, about ${game.minutes} min. By ${game.author}, ${game.license} license.` }),
-        el('p', { className: 'facts', textContent: history || 'Not played yet.' })),
+        el('p', { className: 'facts', textContent: history || 'Not played yet.' }), ...creatorLines(game)),
       el('div', { className: 'actions' },
         el('button', { className: 'go', type: 'button', textContent: 'Find a player', onclick: () => choose(game, { t: 'find' }) }),
         el('button', { type: 'button', textContent: 'Play alone', onclick: () => choose(game, { t: 'solo' }) }),

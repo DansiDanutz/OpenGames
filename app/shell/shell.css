@@ -92,3 +92,5 @@ small{display:block;font-weight:400}
 #score:empty{display:none}
 .status .small{flex:1;text-align:center}
 @media (max-width:640px){#setup,#terms,#board{padding:24px 16px 40px}.status{flex-wrap:wrap}.status .small{order:3;flex-basis:100%;text-align:left}#boardTable th,#boardTable td{padding:8px 4px}}
+button.link{min-height:32px;padding:4px 0;border:0;border-radius:6px;color:var(--go);text-decoration:underline;text-underline-offset:3px;text-align:left}
+.games .sponsor{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;max-width:none;font-size:14px}.sponsor span{padding:1px 8px;border:1px solid var(--line);border-radius:99px}.sponsor .link{color:var(--ink)}
