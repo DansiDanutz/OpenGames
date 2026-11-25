@@ -22,7 +22,7 @@ try {
       appId: 'org.opengames.app', productName: 'OpenGames', copyright: 'AGPL-3.0-only', asar: true, npmRebuild: false,
       directories: { output: 'dist', buildResources: 'packaging' },
       files: ['package.json', 'LICENSE*', 'app/**', '!app/config.json', { from: made, to: 'app', filter: ['config.json'] }, 'games/**', 'kit/**', 'packaging/icon.png', 'library.lock.json', '!node_modules'],
-      mac: { category: 'public.app-category.games', icon: 'packaging/icon.png', target: ['dmg'], gatekeeperAssess: false, ...(process.env.CSC_NAME ? { hardenedRuntime: true } : { hardenedRuntime: false, identity: '-' }) },
+      mac: { category: 'public.app-category.games', icon: 'packaging/icon.png', target: ['dmg'], gatekeeperAssess: false, ...(process.env.CSC_NAME ? { hardenedRuntime: true, entitlements: 'packaging/entitlements.mac.plist', entitlementsInherit: 'packaging/entitlements.mac.plist' } : { hardenedRuntime: false, identity: '-' }) },
       win: { target: ['nsis'], icon: 'packaging/icon.png' },
       linux: { target: ['AppImage'], category: 'Game', icon: 'packaging/icon.png' },
       electronFuses: { runAsNode: false, enableNodeOptionsEnvironmentVariable: false, enableNodeCliInspectArguments: false,

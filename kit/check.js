@@ -18,7 +18,7 @@ export function checkGame(dir) {
   if (found) throw new Error(`rules must not use ${found.source}`);
   const kit = fs.realpathSync(import.meta.dirname);
   const secret = randomBytes(16).toString('hex');
-  const run = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${root}/*`, `--allow-fs-read=${kit}/*`, `--allow-fs-read=${path.dirname(kit)}/package.json`,
+  const run = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${path.join(root, '*')}`, `--allow-fs-read=${path.join(kit, '*')}`, `--allow-fs-read=${path.join(path.dirname(kit), 'package.json')}`,
     `--max-old-space-size=${MEMORY_MB}`, '--disable-proto=delete', '--frozen-intrinsics', path.join(kit, 'check-run.js'), file, JSON.stringify(manifest.options ?? [])],
   { input: secret, env: {}, cwd: kit, timeout: LIMIT_MS, killSignal: 'SIGKILL', encoding: 'utf8', maxBuffer: 1024 * 1024 });
   if (run.error) throw new Error(run.error.code === 'ETIMEDOUT' ? 'the rules took too long' : run.error.message);

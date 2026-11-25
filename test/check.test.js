@@ -29,7 +29,10 @@ test('rules that get past the words check still cannot write, run programs, read
     assert.throws(() => checkGame(dir), /restricted|permission/i, name);
     assert.equal(fs.existsSync(proof), false, name);
   }
-  const { dir } = hostile(t, () => `const p = ${NODE}; export const env = Object.keys(p.env).length; if (env > 3) throw new Error('saw the environment');`);
+  // Windows always gives a program a few variables of its own; ours must not be among them.
+  process.env.OPENGAMES_TEST_VALUE = 'private';
+  t.after(() => { delete process.env.OPENGAMES_TEST_VALUE; });
+  const { dir } = hostile(t, () => `if (${NODE}.env.OPENGAMES_TEST_VALUE) throw new Error('saw the environment');`);
   assert.doesNotThrow(() => checkGame(dir));
 });
 test('nothing a game does during the check reaches the network', async (t) => {

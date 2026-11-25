@@ -52,7 +52,7 @@ test('rules cannot change the state a page was given', () => {
   assert.equal(m.fingerprint(), before);
 });
 test('Shikaku passes the automatic check', async () => {
-  assert.equal((await checkGame(new URL('../games/shikaku', import.meta.url).pathname)).matches, 48);
+  assert.equal((await checkGame(`${import.meta.dirname}/../games/shikaku`)).matches, 48);
 });
 test('the check refuses rules that differ between computers, and games nobody can finish', () => {
   let n = 0;

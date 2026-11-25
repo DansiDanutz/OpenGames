@@ -146,7 +146,8 @@ test('an opponent who never answers the greeting does not keep you waiting', asy
 });
 test('a stream of moves ends the match', async () => {
   const { host, guest } = await pair();
-  for (let i = 0; i < 60; i++) guest.session.play({ round: 0, move: { type: 'cover', cells: i % 30 } });
+  // Many more than a slow computer can sign within the seconds the limit counts.
+  for (let i = 0; i < 1000; i++) guest.session.play({ round: 0, move: { type: 'cover', cells: i % 30 } });
   await until(() => host.failed);
   assert.match(host.failed, /too much/);
 });
