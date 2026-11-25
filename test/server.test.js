@@ -183,3 +183,12 @@ test('one address cannot meet everybody who is looking for a player', () => with
   const friend = client(s.port, { t: 'create' });
   await until(() => friend.code);
 }));
+test('a player who already waits is not sent away because of others at the same address', () => withServer({ findsPerMinute: 1 }, async (s) => {
+  const first = client(s.port, { t: 'find' }), other = client(s.port, { t: 'find' }, OTHER);
+  await until(() => first.searching && other.searching);
+  await until(() => { client(s.port, { t: 'find' }); return true; });
+  await until(() => first.paired);
+  const late = client(s.port, { t: 'find' }, OTHER);
+  await until(() => late.error);
+  assert.deepEqual([other.error, other.closed], [undefined, undefined]);
+}));
