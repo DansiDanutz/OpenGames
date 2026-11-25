@@ -5,9 +5,12 @@ const sides = (n, i) => [i >= n && i - n, i < n * n - n && i + n, i % n > 0 && i
 export const isFree = (state, player, cell) => state.cells[cell] === -1 && !sides(state.n, cell).some((j) => state.cells[j] === player);
 export const choices = (state, player) => state.cells.map((_, i) => i).filter((i) => isFree(state, player, i));
 
-export function setup({ options }) {
-  const n = Number(options.size ?? 5);
-  return { n, cells: Array(n * n).fill(-1), turn: 0 };
+export const ROCK = 2;                                 // nobody may claim it
+/* Rocks in other places every game keep either seat from always winning. */
+export function setup({ random, options }) {
+  const n = Number(options.size ?? 5), order = Array.from({ length: n * n }, (_, i) => ({ i, at: random() })).sort((a, b) => a.at - b.at || a.i - b.i);
+  const rocks = order.slice(0, n + 2).map((x) => x.i);
+  return { n, cells: Array.from({ length: n * n }, (_, i) => (rocks.includes(i) ? ROCK : -1)), turn: 0 };
 }
 export function move(state, player, m) {
   if (player !== state.turn) throw new Error('it is not your turn');

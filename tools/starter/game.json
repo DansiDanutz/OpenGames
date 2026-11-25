@@ -13,5 +13,5 @@
   "options": [
     { "id": "size", "label": "Board", "default": "5", "choices": [{ "id": "5", "label": "5 × 5" }, { "id": "7", "label": "7 × 7" }] }
   ],
-  "howto": ["Take turns claiming an empty cell.", "Your new cell may not touch your own ground by a side.", "Who cannot claim a cell loses."]
+  "howto": ["Take turns claiming an empty cell. Nobody may claim a rock.", "Your new cell may not touch your own ground by a side.", "Who cannot claim a cell loses."]
 }

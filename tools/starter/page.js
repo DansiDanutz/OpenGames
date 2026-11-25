@@ -7,7 +7,7 @@ const $ = (id) => document.getElementById(id);
 let view = null, me = 0, isPlaying = false, names = [];
 
 const isMine = () => isPlaying && view.turn === me;
-const label = (owner, i) => `Row ${Math.floor(i / view.n) + 1}, column ${i % view.n + 1}: ${owner === -1 ? 'free' : owner === me ? 'yours' : 'theirs'}`;
+const label = (owner, i) => `Row ${Math.floor(i / view.n) + 1}, column ${i % view.n + 1}: ${owner === -1 ? 'free' : owner === rules.ROCK ? 'a rock' : owner === me ? 'yours' : 'theirs'}`;
 function build() {
   $('cells').className = `n${view.n}`;
   $('cells').replaceChildren(...view.cells.map((_, i) => {
