@@ -52,8 +52,8 @@ test('waiting ends after the time limit', () => withServer({ waitMs: 60 }, async
 test('too many connections, messages, bytes or wrong codes are cut off', async () => {
   await withServer({ perAddress: 2 }, async (s) => {
     const all = [1, 2, 3].map(() => client(s.port, { t: 'create' }));
-    await until(() => all.some((c) => c.closed));
-    assert.equal(all.filter((c) => c.code).length, 2);
+    await until(() => all.every((c) => c.closed || c.code));
+    assert.deepEqual([all.filter((c) => c.code).length, all.filter((c) => c.closed).length], [2, 1]);
   });
   const raw = async (s, send) => {
     const ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
