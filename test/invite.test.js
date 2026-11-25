@@ -5,7 +5,10 @@ import { inviteText, isCode, whatsappUrl } from '../app/invite.js';
 const game = { id: 'avioane', name: 'Avioane & Bărcuțe' }, code = 'ABCD2345';
 test('an invite names the game, the code and the page of the game', () => {
   const text = inviteText({ game, code, server: 'wss://play.example.org' });
-  for (const part of ['Avioane & Bărcuțe', code, '10 minutes', 'https://play.example.org/games/avioane']) assert.ok(text.includes(part), part);
+  for (const part of ['Avioane & Bărcuțe', code, '10 minutes', 'https://play.example.org/play#avioane=ABCD2345']) assert.ok(text.includes(part), part);
+});
+test('the browser version sends the same link', () => {
+  assert.equal(inviteText({ game, code, server: 'https://play.example.org' }), inviteText({ game, code, server: 'wss://play.example.org' }));
 });
 test('a server without a secure address is not named', () => {
   assert.doesNotMatch(inviteText({ game, code, server: 'ws://127.0.0.1:4310' }), /https?:/);

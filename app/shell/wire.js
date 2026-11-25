@@ -2,6 +2,7 @@
    direct connection. When that fails, or a player hides their address, the
    match server passes the messages on. */
 const DIRECT_MS = 6000;
+const AGAIN_MS = 2000, WAIT_MS = 10 * 60 * 1000;
 const MAX_TEXT = 24 * 1024;
 
 const MAX_SDP = 8 * 1024, MAX_CANDIDATES = 30;
@@ -36,18 +37,22 @@ const parse = (text) => {
 };
 
 /* Opens the line to the match server. `on` gets: code, searching, paired, error, closed. */
-export function meet({ url, key, ask, on, Socket = globalThis.WebSocket }) {
-  const ws = new Socket(url);
-  let paired = false, ended = false, peer = null;
+export function meet({ url, key, ask, on, Socket = globalThis.WebSocket, againMs = AGAIN_MS, waitMs = WAIT_MS }) {
+  let ws, paired = false, ended = false, peer = null, back = null, since = 0;
   const end = (reason) => { if (ended) return; ended = true; if (!paired) on.closed?.(reason); else peer?.lost(); };
   const send = (msg) => { if (ws.readyState === 1) ws.send(JSON.stringify(msg)); };
-  ws.onopen = () => send({ ...ask, key });
-  ws.onerror = () => end('offline');
-  ws.onclose = () => end('offline');
-  ws.onmessage = ({ data }) => {
+  // A phone that shows another app cuts the connection. An invite waits on the server; its player comes back to it.
+  const cut = () => {
+    if (ended) return;
+    if (paired || !back) end('offline');
+    else if (Date.now() - since > waitMs) end('expired');
+    else setTimeout(() => { if (!ended) connect(); }, againMs).unref?.();
+  };
+  const receive = ({ data }) => {
     const msg = parse(data);
     if (!msg) return;
-    if (msg.t === 'code' || msg.t === 'searching' || msg.t === 'error') on[msg.t]?.(msg);
+    if (msg.t === 'code' && typeof msg.back === 'string' && !back) { back = msg.back; since = Date.now(); }
+    if (msg.t === 'code' || msg.t === 'searching' || msg.t === 'waiting' || msg.t === 'error') on[msg.t]?.(msg);
     else if (msg.t === 'expired') end('expired');
     else if (msg.t === 'paired' && !paired) {
       paired = true;
@@ -57,7 +62,18 @@ export function meet({ url, key, ask, on, Socket = globalThis.WebSocket }) {
     else if (msg.t === 'relay') peer?.relay(msg.data);
     else if (msg.t === 'gone') peer?.lost();
   };
-  return { cancel() { ended = true; ws.close(); } };
+  function connect() {
+    const mine = new Socket(url);
+    ws = mine;
+    let isCut = false;
+    const lost = () => { if (isCut || ws !== mine) return; isCut = true; cut(); };
+    mine.onopen = () => send({ ...ask, key, ...(back ? { back } : {}) });
+    mine.onerror = lost;
+    mine.onclose = lost;
+    mine.onmessage = (event) => { if (ws === mine) receive(event); };
+  }
+  connect();
+  return { cancel() { ended = true; send({ t: 'leave' }); ws.close(); } };
 }
 
 /* Resolves to { mode: 'direct' | 'relay', send, close, onMessage, onClose }. */

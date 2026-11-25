@@ -149,7 +149,8 @@ try {
   }
   const sent = await ann.app.evaluate(() => globalThis.sent);
   assert.equal(sent[0], code);
-  assert.match(sent[1], new RegExp(`Shikaku.*${code}`));
+  assert.match(sent[1], /Shikaku/);
+  assert.ok(sent[1].includes(code));
   assert.equal(new URL(sent[2]).origin, 'https://wa.me');
   assert.equal(new URL(sent[2]).searchParams.get('text'), sent[1]);
   await assert.rejects(ann.page.evaluate(() => desk.invite('shikaku', 'https://x', 'whatsapp')), /not a code/);

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { readLibrary } from '../app/library.js';
 import { createLeaderboard } from './leaderboard.js';
 import { startMatchServer } from './match-server.js';
+import { createPlay, joinPages } from './play.js';
 import { createSite } from './site.js';
 import { createStats } from './stats.js';
 import { startStun } from './stun.js';
@@ -23,7 +24,7 @@ if (DATA_DIR) {
   leaderboard = createLeaderboard({ file: path.join(DATA_DIR, 'leaderboard.db'), library });
   stats = createStats({ file: path.join(DATA_DIR, 'stats.db'), library });
 }
-const site = createSite({ games, stats, ranked: leaderboard?.players });
+const site = joinPages(createSite({ games, stats, ranked: leaderboard?.players }), createPlay({ games, stunPort: STUN_PORT ? number('STUN_PORT', STUN_PORT, 65535) : null }));
 const server = await startMatchServer({ port: number('PORT', PORT, 65535), host: HOST, proxies: number('TRUST_PROXY', TRUST_PROXY, 5), leaderboard, stats, site });
 const stun = STUN_PORT ? await startStun({ port: number('STUN_PORT', STUN_PORT, 65535), host: HOST }) : null;
 console.log(`OpenGames match server on port ${server.port}. Leaderboards: ${leaderboard ? 'on' : 'off (set DATA_DIR)'}. STUN: ${stun ? `port ${stun.port}` : 'off (set STUN_PORT)'}.`);

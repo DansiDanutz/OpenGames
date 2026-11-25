@@ -158,6 +158,7 @@ async function begin(game, ask, terms = {}) {
   if (!still()) return;
   mine.meeting = meet({ url: server, key: `${game.id}@${game.hash}`, ask: { ...ask, pub }, on: {
     code: ({ code }) => still() && waiting('Send this code to your friend', `They open ${game.name} in OpenGames and type it.`, code),
+    waiting: () => still() && waiting('Your friend is on the way', 'Your friend has left OpenGames for a moment. The match starts when they come back.'),
     searching: () => still() && waiting('Looking for a player', `The match starts when somebody else wants to play ${game.name}.`),
     error: ({ error }) => still() && leave(TEXT[error] ?? TEXT.bad_request),
     closed: (reason) => still() && leave(TEXT[reason] ?? TEXT.offline),
@@ -283,3 +284,7 @@ $('sound').onclick = () => { settings.sound = !settings.sound; drawSound(); curr
 drawSound();
 ({ server, stun, games: library } = await desk.games());
 drawLibrary();
+/* A link from an invite: #<game>=<code>. */
+const invited = /^#([a-z0-9-]{1,40})=([A-HJ-NP-Z2-9]{8})$/.exec(location.hash), invitedTo = invited && library.find((g) => g.id === invited[1]);
+if (invited) history.replaceState(null, '', location.pathname);
+if (invitedTo) begin(invitedTo, { t: 'join', code: invited[2] });

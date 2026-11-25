@@ -23,7 +23,7 @@ const icon = (g, size) => `<img src="${gameUrl(g)}/icon" alt="" width="${size}" 
 function page(title, about, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title>
 <meta name="description" content="${escape(about)}"><meta property="og:title" content="${escape(title)}"><meta property="og:description" content="${escape(about)}"><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/site.css"></head>
-<body><header><a class="mark" href="/">Open<b>Games</b></a><nav aria-label="Main"><a href="/">Games</a><a href="/creators">Creators</a>${out(SOURCE, 'Source code')}</nav></header><main>${body}</main>
+<body><header><a class="mark" href="/">Open<b>Games</b></a><nav aria-label="Main"><a href="/play">Play</a><a href="/">Games</a><a href="/creators">Creators</a>${out(SOURCE, 'Source code')}</nav></header><main>${body}</main>
 <footer>Open-source games for two players. No accounts, no payments, nothing of value to win.</footer></body></html>`;
 }
 
@@ -48,12 +48,12 @@ const STEPS = `<ol class="steps"><li><h3>Make it</h3><p>Clone the project and te
 cd OpenGames &amp;&amp; pnpm install</code></pre></li><li><h3>Publish it</h3><p>Say <b>publish my game</b>. It is checked and sent on GitHub. A person reads it before anybody plays it.</p></li>
 <li><h3>Grow it</h3><p>Say <b>grow my game</b> to add your own support page, one sponsor line, and posts you can share.</p></li></ol>`;
 
-const home = (games) => page('OpenGames', 'Open-source games for two players, who connect straight to each other.', `<h1>Two players. No middleman.</h1><p class="lead">Open-source games. Play a friend, find a player, or play alone against the computer.</p>
+const home = (games) => page('OpenGames', 'Open-source games for two players, who connect straight to each other.', `<h1>Two players. No middleman.</h1><p class="lead">Open-source games. Play a friend, find a player, or play alone against the computer.</p><p><a class="go" href="/play">Play now</a></p>
 <ul class="games">${games.map((g) => `<li><a href="${gameUrl(g)}">${icon(g, 96)}<span><b>${escape(g.name)}</b><span>${escape(g.summary)}</span><small>about ${g.minutes} minutes</small></span></a></li>`).join('')}</ul>`);
 
 const gamePage = (g) => page(`${g.name} on OpenGames`, g.summary, `<div class="title">${icon(g, 120)}<div><h1>${escape(g.name)}</h1><p>by <a href="${escape(creatorUrl(g.author))}">${escape(g.author)}</a></p></div></div><p class="lead">${escape(g.summary)}</p>
 <h2>How to play</h2><ul>${g.howto.map((x) => `<li>${escape(x)}</li>`).join('')}</ul><p class="soft">Two players, about ${g.minutes} minutes. Version ${escape(g.version)}, licence ${escape(g.license)}.</p>
-<p>${out(SOURCE, 'Get OpenGames')}</p>${g.support ? `<h2>Support the creator</h2><p>${out(g.support, g.support.replace('https://', ''))}</p><p class="soft">This goes to the creator on their own page. OpenGames takes nothing.</p>` : ''}
+<p><a class="go" href="/play">Play now</a></p>${g.support ? `<h2>Support the creator</h2><p>${out(g.support, g.support.replace('https://', ''))}</p><p class="soft">This goes to the creator on their own page. OpenGames takes nothing.</p>` : ''}
 ${g.sponsor ? `<aside><small>Sponsor, paid to the creator</small><p><b>${escape(g.sponsor.name)}</b> ${escape(g.sponsor.text)}</p><p>${out(g.sponsor.url, new URL(g.sponsor.url).hostname, ' sponsored')}</p></aside>` : ''}`);
 
 const creators = (games) => page('Creators on OpenGames', 'Make a game, keep everything it earns.', `<h1>Make a game. Keep what it earns.</h1><p class="lead">You need GitHub and an AI coding tool, no account with us. OpenGames takes 0% and never touches your money.</p>${STEPS}

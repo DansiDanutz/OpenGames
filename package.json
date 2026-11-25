@@ -11,7 +11,7 @@
     "server": "node server/main.js",
     "demo": "node tools/demo.js",
     "test": "node --test --test-timeout=60000 test/*.test.js",
-    "test:app": "node test/app.e2e.js && node test/games.e2e.js && node test/solo.e2e.js && node test/starter.e2e.js",
+    "test:app": "node test/app.e2e.js && node test/games.e2e.js && node test/solo.e2e.js && node test/starter.e2e.js && node test/web.e2e.js",
     "check": "node tools/check-all.js",
     "kit": "node tools/build-kit.js",
     "pack-app": "node tools/pack.js"

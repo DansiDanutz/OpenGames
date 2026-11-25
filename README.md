@@ -4,6 +4,11 @@
 
 Three games in 3D, with sound: Shikaku, Gemhold, and Avioane & Bărcuțe. There are no accounts and no payments. Nothing of value can be won; a place on a leaderboard is all there is.
 
+## Play in a browser or on a phone
+The match server also serves the app at `/play`: the same games, against the same players. It can be installed on a phone or computer (**Install the app**; on an iPhone, Share and *Add to Home Screen*). There is nothing to sign in to: the player's name and key stay in that browser, so they are the same player next time. Another browser or a cleared one is a new player. An invite holds a link that opens the match, and it waits ten minutes even when the phone shows WhatsApp.
+
+A game runs in a sandboxed frame with an origin of its own and no network. Firefox and Safari do not know the rule that blocks WebRTC in pages, so there the block is a script that takes it away from the game's page.
+
 ## Try it
 ```sh
 pnpm install
@@ -78,7 +83,7 @@ The server is built in. The packed app checks its own files, cannot be run as pl
 - **Very slow graphics:** games lower their own detail, but they need WebGL 2.
 
 ## Tests
-`pnpm test` (engine, series, session, server, site, leaderboard, network, check), `pnpm test:app` (real windows), `node test/packed.e2e.js <program>` (the packed app), `pnpm check`.
+`pnpm test` (engine, series, session, server, site, leaderboard, network, check), `pnpm test:app` (real windows, and a phone's screen in Chrome; `node test/web.e2e.js webkit` for an iPhone's), `node test/packed.e2e.js <program>` (the packed app), `pnpm check`.
 
 ## Licenses
 The app and server: AGPL-3.0. The game kit (`kit/`) and the three games: MIT. three.js: MIT.
