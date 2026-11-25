@@ -242,7 +242,9 @@ test('nobody takes an invite without its secret, and a held invite ends', () => 
   const thief = phone(s.port, { t: 'create', back: `${a.code.code}.00000000-0000-4000-8000-000000000000` });
   await until(() => thief.closed);
   assert.equal(thief.closed, 'expired');
+  thief.cancel();
   a.sockets[0].onclose = null; a.sockets[0].close();
+  await until(() => s.counts().clients === 0);           // before that the server still sees its player
   const b = phone(s.port, { t: 'join', code: a.code.code });
   await until(() => b.closed);
   assert.equal(b.closed, 'expired');

@@ -64,11 +64,14 @@ function collect(games, kit, stunPort) {
   return all;
 }
 
+/* A name with a space or a letter like ț arrives encoded. The result is only ever looked up, never opened. */
+const normal = (pathname) => { try { return decodeURIComponent(pathname); } catch { return pathname; } };
+
 /* games: from readLibrary. Answers like createSite. */
 export function createPlay({ games, stunPort = null }) {
   const all = collect(games, readKit(path.join(ROOT, 'kit')).files, stunPort);
   const play = (pathname, headers = {}) => {
-    const a = all.get(pathname);
+    const a = all.get(normal(pathname));
     if (!a) return null;
     const host = HOST.test(headers.host ?? '') ? headers.host : '';
     const own = { ...a.headers, etag: a.tag, ...(a.policy ? { 'content-security-policy': a.policy.replaceAll(' HOST', a.policy === SHELL_POLICY ? (host && ` wss://${host} ws://${host}`) : (host && ` ${host}`)) } : {}) };
@@ -76,7 +79,7 @@ export function createPlay({ games, stunPort = null }) {
     if (a.gzip && /\bgzip\b/.test(headers['accept-encoding'] ?? '')) return { status: 200, headers: { ...own, 'content-encoding': 'gzip' }, body: a.gzip };
     return { status: 200, headers: own, body: a.body };
   };
-  play.has = (pathname) => all.has(pathname);
+  play.has = (pathname) => all.has(normal(pathname));
   return play;
 }
 /* Several sets of pages as one. */

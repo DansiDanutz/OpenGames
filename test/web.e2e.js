@@ -90,18 +90,20 @@ try {
   assert.match((await ann.evaluate(() => globalThis.sent))[0], /^https:\/\/wa\.me\/\?text=/);
   await shot(ann, 'invite');
   const code = await ann.textContent('#code');
+  const explain = async (error) => {
+    for (const p of [ann, bob]) console.log(await p.evaluate(() => JSON.stringify([document.body.dataset.screen, ...['status', 'mode', 'notice', 'waitTitle', 'waitText'].map((id) => document.getElementById(id).textContent), document.querySelectorAll('iframe').length])));
+    console.log(errors.filter((e) => !/Content.Security.Policy/.test(e)));
+    throw error;
+  };
   const bob = await open(`#shikaku=${code}`);
   await bob.waitForSelector('text=A friend invites you to play Shikaku');
   assert.equal(server.counts().open, 1);                 // nobody is connected by a link alone
   await shot(bob, 'invited');
   await bob.click('#invitedYes');
-  await bob.waitForSelector('#terms:not([hidden])', { timeout: 20_000 });
+  await bob.waitForSelector('#terms:not([hidden])', { timeout: 20_000 }).catch(explain);
   assert.equal(new URL(bob.url()).hash, '');
   await bob.click('#termsYes');
-  for (const p of [ann, bob]) await p.waitForFunction(() => document.getElementById('status').textContent === 'Playing', null, { timeout: 20_000 }).catch(async (error) => {
-    for (const x of [ann, bob]) console.log(await x.evaluate(() => [document.body.dataset.screen, document.getElementById('status').textContent, document.getElementById('notice').textContent, document.getElementById('waitTitle').textContent, document.querySelectorAll('iframe').length]));
-    throw error;
-  });
+  for (const p of [ann, bob]) await p.waitForFunction(() => document.getElementById('status').textContent === 'Playing', null, { timeout: 20_000 }).catch(explain);
   console.log('connection:', await bob.textContent('#mode'));
   await bob.click('#leave');
   await ann.waitForSelector('text=gave up');

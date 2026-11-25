@@ -44,11 +44,13 @@ test('answers are compressed, and not sent twice', () => {
   assert.deepEqual([again.status, again.body], [304, '']);
 });
 test('every page of a game is locked, and its pictures run nothing', () => {
-  const extra = { ...games[0], files: new Map([...games[0].files, ['more.html', Buffer.from('<p>x')], ['deep/x.svg', Buffer.from('<svg/>')]]) };
+  const extra = { ...games[0], files: new Map([...games[0].files, ['more.html', Buffer.from('<p>x')], ['deep/x.svg', Buffer.from('<svg/>')], ['poză 1#2.svg', Buffer.from('<svg/>')]]) };
   const other = createPlay({ games: [extra] });
   const page = other(`/table/${extra.id}/more.html`, {}), picture = other(`/table/${extra.id}/deep/x.svg`, {});
   assert.match(page.body.toString(), /^<script src="\/web\/game\.js">/);
   assert.match(page.headers['content-security-policy'], /sandbox allow-scripts;.*connect-src 'none'/);
+  assert.equal(other(`/table/${extra.id}/${encodeURIComponent('poză 1#2.svg')}`).status, 200);
+  assert.equal(other('/table/%'), null);
   assert.match(picture.headers['content-security-policy'], /default-src 'none'.*sandbox$/);
   assert.doesNotMatch(picture.headers['content-security-policy'], /allow-scripts/);
 });
