@@ -314,7 +314,6 @@ function retry(mine, isNow) {
 }
 /* One of the two pages was closed and has lost the match. The room is still there. */
 function pageGone(mine, isMidMatch) {
-  mine.wire?.close();
   if (mine.over) return;
   if (isMidMatch) {
     const { session } = mine;
