@@ -134,8 +134,56 @@ $('go').onclick = () => {
   draw();
   $('say').textContent = 'Your fleet is sealed. Nobody can see it or change it now.';
   table.play({ type: 'commit', hash: rules.seal(fleet, salt) });
+  see('theirs');
   $('theirs').focus();
 };
+/* ---- on a phone there is one sea at a time: theirs to shoot at, mine while they shoot */
+const LOOK_MS = 1500, SETTLE_MS = 350, TAP_PX = 12, SWIPE_PART = 0.18;
+const isPhone = matchMedia('(max-width: 640px)');
+let looking = 0, shownAt = 0, finger = null;
+function see(side) {
+  clearTimeout(looking);
+  if (document.body.dataset.side !== side) shownAt = performance.now();
+  document.body.dataset.side = side;
+  finger = null;                                         // a tap or a swipe that had begun is over
+  $('cards').classList.remove('held');
+  $('cards').style.transform = '';
+  $('their').inert = isPhone.matches && !placing && side === 'mine';
+  $('my').inert = isPhone.matches && !placing && side === 'theirs';
+  $('seeTheirs').setAttribute('aria-pressed', String(side === 'theirs'));
+  $('seeMine').setAttribute('aria-pressed', String(side === 'mine'));
+}
+/* Time to see what the last shot did, then the sea of the next one. */
+function seeNext(wait) {
+  clearTimeout(looking);
+  looking = setTimeout(() => { if (playing && view.phase === 'play') see(view.turn === me ? 'theirs' : 'mine'); }, wait);
+}
+isPhone.addEventListener('change', () => document.body.dataset.side && see(document.body.dataset.side));
+/* A finger that stays shoots, one that moves sideways brings the other sea. */
+$('seas').addEventListener('pointerdown', (e) => {
+  if (!isPhone.matches || placing || !view || !e.isPrimary || e.button) return;
+  finger = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, moved: false, isSwipe: false, isSettled: performance.now() - shownAt >= SETTLE_MS };
+});
+$('seas').addEventListener('pointermove', (e) => {
+  if (finger?.id !== e.pointerId) return;
+  const dx = e.clientX - finger.x, dy = e.clientY - finger.y, moved = finger.moved || Math.hypot(dx, dy) > TAP_PX;
+  finger = { ...finger, dx, moved, isSwipe: finger.isSwipe || (moved && !finger.moved && Math.abs(dx) > Math.abs(dy)) };
+  if (!finger.isSwipe) return;
+  const wide = $('seas').clientWidth, from = document.body.dataset.side === 'mine' ? -wide : 0;
+  $('cards').classList.add('held');
+  $('cards').style.transform = `translateX(${Math.max(-wide, Math.min(0, from + dx))}px)`;
+});
+$('seas').addEventListener('pointerup', (e) => {
+  if (finger?.id !== e.pointerId) return;
+  const { dx, moved, isSwipe, isSettled } = finger, side = document.body.dataset.side;
+  finger = null;
+  if (isSwipe) { see(Math.abs(dx) < $('seas').clientWidth * SWIPE_PART ? side : dx < 0 ? 'mine' : 'theirs'); return; }
+  const cell = !moved && isSettled && side === 'theirs' ? boards.theirs.cellAt(e, { isClamped: false }) : null;
+  if (cell) { at = cell.r * n + cell.c; shoot(at); }
+});
+$('seas').addEventListener('pointercancel', () => { if (finger) see(document.body.dataset.side); });
+$('seeTheirs').onclick = () => see('theirs');
+$('seeMine').onclick = () => see('mine');
 /* ---- shooting */
 function shoot(cell) {
   if (!myTurn()) return;
@@ -143,7 +191,7 @@ function shoot(cell) {
   sound.play('fire', boards.theirs.pan(cell % n));
   table.play({ type: 'shoot', cell });
 }
-$('theirs').addEventListener('pointerdown', (e) => { if (e.button) return; const cell = boards.theirs.cellAt(e, { isClamped: false }); if (cell) { at = cell.r * n + cell.c; shoot(at); } });
+$('theirs').addEventListener('pointerdown', (e) => { if (e.button || isPhone.matches) return; const cell = boards.theirs.cellAt(e, { isClamped: false }); if (cell) { at = cell.r * n + cell.c; shoot(at); } });
 $('theirs').addEventListener('keydown', (e) => {
   const step = { ArrowUp: -n, ArrowDown: n, ArrowLeft: at % n ? -1 : 0, ArrowRight: at % n < n - 1 ? 1 : 0 }[e.key];
   if (step !== undefined) { if (at + step >= 0 && at + step < n * n) at += step; $('say').textContent = `${where(at)}: ${view?.board[1 - me][at] || 'unknown'}`; }
@@ -184,6 +232,8 @@ function tell(by) {
   const said = view.log[1 - by]?.at(-1), answered = by !== undefined && view.shot === null && view.phase !== 'seal';
   const target = answered ? by : null, last = target === null ? null : view.log[target].at(-1);
   if (!last || said === undefined && !last) return;
+  see(target === me ? 'mine' : 'theirs');
+  seeNext(LOOK_MS);
   boom(target === me ? 'mine' : 'theirs', last);
   const mine = target === me, words = { miss: 'a miss', near: 'a miss, but near a piece', hit: 'a hit', down: last.piece ? `${NAMES[last.piece.kind]} ${last.piece.kind === 'plane' ? 'shot down' : 'sunk'}` : '' };
   $('say').textContent = `${mine ? 'They shot' : 'You shot'} ${where(last.cell)}: ${words[last.says]}.`;
@@ -198,6 +248,8 @@ const table = await connect(rules, {
     fleet = rules.randomFleet(n, chance); salt = newSalt();
     $('mineTitle').textContent = 'Your fleet';
     $('theirTitle').textContent = players[1 - me].name;
+    $('seeTheirs').textContent = `${players[1 - me].name}\u2019s sea`;
+    see('mine');
     buildSeas();
     $('say').textContent = `${rounds > 1 ? `Game ${round + 1}. ` : ''}Drag a piece to move it and tap it to turn it. The white nose is a plane\u2019s head: a hit there brings the plane down.`;
     draw();
@@ -210,11 +262,13 @@ const table = await connect(rules, {
     draw();
     if (v.log[0].length + v.log[1].length > had.log[0].length + had.log[1].length) tell(by);
     else if (v.phase === 'play' && had.phase === 'seal' && myTurn()) sound.play('turn');
+    if (v.phase === 'play' && had.phase === 'seal') seeNext(0);
     setTimeout(() => { if (playing && view === v) reply(); }, 0);
   },
   refused({ error }) { $('say').textContent = `Not accepted: ${error}.`; sound.play('no'); },
   end({ result, isLast }) {
     playing = false; placing = false; drag = null;
+    see('theirs');
     draw();
     $('whose').textContent = 'The game is over';
     const won = result.winner === me;

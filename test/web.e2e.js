@@ -25,6 +25,53 @@ async function open(hash = '') {
 }
 const card = (p, name) => p.locator('#games li').filter({ hasText: name }).first();
 const shot = (p, name) => process.env.SHOTS && p.screenshot({ path: path.join(process.env.SHOTS, `web-${isWebkit ? 'ios' : 'android'}-${name}.png`) });
+/* One sea at a time, with cells large enough for a finger, and the other one is shown when it is its turn. */
+async function fleetOnPhone(page, frame) {
+  await frame.click('#go');
+  const seen = () => frame.evaluate(() => ['theirs', 'mine'].filter((id) => Math.abs(document.getElementById(id).getBoundingClientRect().left) < 2));
+  const mySea = (id) => frame.waitForFunction((x) => document.body.dataset.side === x, id, { timeout: 20_000 });
+  for (let i = 0; i < 2; i++) {
+    await frame.waitForFunction(() => /^Your shot/.test(document.getElementById('whose').textContent), null, { timeout: 20_000 });
+    await mySea('theirs');
+    await page.waitForTimeout(600);
+    assert.deepEqual(await seen(), ['theirs']);
+    const cell = await frame.evaluate(async () => {
+      const el = document.getElementById("theirs"), box = el.getBoundingClientRect(), { n } = document.getElementById('mine').inspect();
+      const { x, y } = el.pointOf(0, 0), next = el.pointOf(0, 1);
+      return { n, x, y, width: next.x - x, box: [box.width, innerWidth], fits: document.documentElement.scrollWidth <= innerWidth };
+    });
+    assert.ok(cell.fits && cell.box[0] === cell.box[1], JSON.stringify(cell));
+    assert.ok(cell.width > (cell.box[1] * 0.84) / cell.n, JSON.stringify(cell));
+    if (i === 0) await shot(page, 'avioane-attack');
+    // A swipe brings the other card and is never a shot.
+    const swipe = (from, to) => frame.evaluate(async ([x0, x1]) => {
+      const el = document.elementFromPoint(x0, innerHeight / 2);
+      const send = (type, x) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, isPrimary: true, pointerId: 9, button: 0, clientX: x, clientY: innerHeight / 2 }));
+      send('pointerdown', x0);
+      for (let k = 1; k <= 8; k++) { send('pointermove', x0 + ((x1 - x0) * k) / 8); await new Promise((done) => { setTimeout(done, 15); }); }
+      send('pointerup', x1);
+      await new Promise((done) => { setTimeout(done, 500); });
+    }, [from, to]);
+    const shots = () => frame.evaluate(() => JSON.stringify(document.getElementById('mine').inspect().view.log));
+    const before = await shots();
+    await swipe(330, 90);
+    assert.deepEqual(await seen(), ['mine']);
+    await swipe(90, 330);
+    assert.deepEqual(await seen(), ['theirs']);
+    await swipe(200, 180);                               // too short to turn the card
+    assert.deepEqual(await seen(), ['theirs']);
+    assert.equal(await shots(), before);
+    const at = await frame.evaluate((k) => document.getElementById('theirs').pointOf(3 + k, 4), i), area = await page.locator('iframe.game').boundingBox();
+    await page.touchscreen.tap(area.x + at.x, area.y + at.y);
+    await frame.waitForFunction(() => document.getElementById('mine').inspect().view.log.flat().length > 0);
+    await mySea('mine');
+    await page.waitForTimeout(400);
+    if (i === 0) await shot(page, 'avioane-defend');
+  }
+  await frame.click('#seeTheirs');
+  await page.waitForTimeout(500);
+  assert.deepEqual(await seen(), ['theirs']);
+}
 try {
   const ann = await open();
   assert.ok(await ann.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -61,6 +108,7 @@ try {
     }), 'blocked');
     await ann.waitForTimeout(800);
     await shot(ann, g.id);
+    if (g.id === 'avioane') await fleetOnPhone(ann, frame);
     await ann.click('#leave');
     await ann.waitForFunction(() => document.getElementById('leave').textContent === 'Back to games');
     await ann.click('#leave');
