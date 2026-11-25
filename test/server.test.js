@@ -196,7 +196,7 @@ test('a player who already waits is not sent away because of others at the same 
 function phone(port, ask) {
   const c = { sockets: [] };
   class Socket extends WebSocket { constructor(url) { super(url); c.sockets.push(this); } }
-  const on = Object.fromEntries(['code', 'waiting', 'error', 'closed', 'paired', 'seat', 'away', 'here', 'link', 'again'].map((k) => [k, (v) => { c[k] = v ?? true; }]));
+  const on = Object.fromEntries(['code', 'waiting', 'error', 'closed', 'paired', 'seat', 'away', 'here', 'link', 'again', 'cutOff'].map((k) => [k, (v) => { c[k] = v ?? true; }]));
   const line = meet({ url: `ws://127.0.0.1:${port}`, key: KEY, ask, on, Socket, againMs: 150 });
   return Object.assign(c, { cancel: line.cancel, askLink: line.link, askAgain: line.again, cut: () => c.sockets.at(-1).close() });
 }
@@ -312,7 +312,7 @@ test('two players in a room are introduced again after a lost line, with a new e
   a.paired.send({ t: 'signal', data: { candidate: 1 } });
   await until(() => late === 1);
 }));
-test('another match begins when both want it, not before', () => withServer({}, async (s) => {
+test('another match begins when both want it, not before', () => withServer({ againMs: 0 }, async (s) => {
   const [a, b] = await friends(s);
   a.paired = b.paired = null;
   const ask = (p) => p.askAgain();
@@ -352,4 +352,32 @@ test('an invite canceled while the connection is cut is gone too', () => withSer
   assert.equal(s.counts().open, 1);
   a.cancel();
   await until(() => s.counts().open === 0);
+}));
+
+test('two players cannot fill the memory by asking for matches', () => withServer({ againMs: 200 }, async (s) => {
+  const [a, b] = await friends(s), began = Date.now();
+  a.paired = b.paired = null;
+  for (const p of [a, b, a, b]) p.askAgain();
+  await until(() => a.paired && b.paired);
+  assert.ok(Date.now() - began >= 100);
+  assert.equal(a.paired.match, 2);
+  await new Promise((r) => { setTimeout(r, 300); });
+  assert.equal(a.paired.match, 2);
+}));
+test('a seat opened twice stays with the newer page, and the older one does not fight for it', () => withServer({}, async (s) => {
+  const [a, b] = await friends(s);
+  const twin = phone(s.port, { t: 'back', back: a.seat.back });
+  await until(() => a.closed && twin.seat);
+  assert.equal(a.closed, 'taken');
+  await new Promise((r) => { setTimeout(r, 400); });
+  assert.deepEqual([twin.closed ?? null, b.closed ?? null, twin.sockets.length], [null, null, 1]);
+}));
+test('a room ends when one of the two who met does not come back', () => withServer({ awayMs: 150 }, async (s) => {
+  const [a, b] = await friends(s);
+  const socket = a.sockets.at(-1);
+  a.stopped = true;
+  socket.onclose = socket.onerror = null;
+  socket.close();
+  await until(() => b.closed);
+  assert.equal(b.closed, 'expired');
 }));

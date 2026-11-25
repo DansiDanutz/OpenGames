@@ -13,11 +13,13 @@ const TEXT = {
   offline: 'The match server cannot be reached. Check your internet connection and try again.',
   expired: 'Nobody joined in time. Please try again.',
   left: 'The other player left.',
+  taken: 'This game is open in another tab.',
+  gone: 'That game has ended.',
   no_match: 'There is no open match with that code, or your friend has a different version of the game.',
   too_many: 'You met many players in a short time. Please wait a minute and try again.',
   bad_request: 'The match server did not accept that. Please try again.',
 };
-const SCREENS = ['library', 'room', 'terms', 'board', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000, RETRY_MS = 1500;
+const SCREENS = ['library', 'room', 'terms', 'board', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000, RETRY_MS = 1500, MAX_TRIES = 20;
 let server = '', stun = null, library = [], current = null;      // current: { game, meeting, session, table, wire, over }
 
 /* While nothing happens a phone leaves the line out. */
@@ -166,9 +168,9 @@ async function showLeaderboard(game) {
   }
 }
 $('boardBack').onclick = () => screen('library');
-async function begin(game, ask, terms = {}, accepted = null) {
+async function begin(game, ask, terms = {}, accepted = null, matchNo = 0) {
   if (current) return;
-  const mine = { game, terms, accepted };
+  const mine = { game, terms, accepted, matchNo, tries: 0 };
   current = mine;
   const still = () => current === mine;
   if (ask.t !== 'create') waiting('Connecting', game.name);
@@ -178,8 +180,10 @@ async function begin(game, ask, terms = {}, accepted = null) {
   const meeting = mine.meeting = meet({ url: server, key: `${game.id}@${game.hash}`, ask: { ...ask, pub }, on: {
     seat: when(({ back, met }) => {
       mine.hasRoom = true;
-      myRoom.value = { game: game.id, hash: game.hash, back, terms: mine.terms, accepted: mine.accepted };
+      mine.back = back;
+      keep(mine);
       if (met && !mine.isLive && !(mine.over && mine.started)) meeting.link();   // this page was asleep, or was thrown away and came back
+      if (mine.over && mine.iAsk) meeting.again();       // the server forgets a question when the line is cut
     }),
     code: when(({ code }) => {
       mine.code = $('code').textContent = code;
@@ -190,15 +194,17 @@ async function begin(game, ask, terms = {}, accepted = null) {
     waiting: when(() => waiting('Your friend is on the way', 'Your friend has left OpenGames for a moment. The match starts when they come back.')),
     searching: when(() => waiting('Looking for a player', `The match starts when somebody else wants to play ${game.name}.`)),
     error: when(({ error }) => leave(TEXT[error] ?? TEXT.bad_request)),
-    closed: when((reason) => closed(mine, reason)),
+    closed: when((reason) => closed(mine, reason === 'expired' && ask.t === 'back' && !mine.back ? 'gone' : reason)),
     cut: when(() => { if (mine.code && !mine.met) $('roomText').textContent = 'Connecting again'; }),
     away: when(() => { if (mine.started && !mine.over && !mine.isLive) say(`${theirName(mine)} left the app for a moment. The match waits.`); }),
     here: when(() => { if (!mine.isLive && !mine.over) meeting.link(); }),
     link: when(() => { mine.isLive = false; meeting.link(); }),
     again: when(() => { mine.theyAsk = true; if (mine.over && !mine.iAsk) say(`${theirName(mine)} wants to play again.`); }),
-    paired: when((met) => { mine.met = true; mine.hasRoom = true; play(mine, met, still).catch((error) => { if (still() && !mine.started) leave(error.message); }); }),
+    paired: when((met) => { mine.met = true; mine.hasRoom = true; play(mine, met, still); }),
   } });
 }
+/* For a page that a phone throws away: the room, and which of its matches this page had begun. */
+const keep = (mine) => { myRoom.value = { game: mine.game.id, hash: mine.game.hash, back: mine.back, terms: mine.terms, accepted: mine.accepted, matchNo: mine.matchNo }; };
 const theirName = (mine) => mine.them ?? 'The other player';
 /* The room is gone: the other player left it, or it waited too long. */
 function closed(mine, reason) {
@@ -209,10 +215,10 @@ function closed(mine, reason) {
   if (!mine.met && !$('room').hidden && reason === 'offline') { $('roomText').textContent = 'You are offline. You can play alone.'; return; }
   if (!mine.started) { leave(TEXT[reason] ?? TEXT.offline); return; }
   if (mine.over) { if (reason === 'left') $('status').textContent += ` ${theirName(mine)} left.`; return; }
-  if (reason !== 'left' && mine.isLive) return;          // a direct match does not need the server
+  if (reason === 'expired' && mine.isLive) return;       // a direct match does not need the server
   const { session } = mine;
   session.close();
-  stop(mine, reason === 'left' ? `${theirName(mine)} left.` : 'The connection was lost.');
+  stop(mine, reason === 'left' ? `${theirName(mine)} left.` : reason === 'taken' ? TEXT.taken : 'The connection was lost.');
   report(mine, session.transcript());
 }
 /* Opens the game's page and waits until it answers. False when the player left in the meantime. */
@@ -243,7 +249,10 @@ const during = (mine, still) => ({
     say('Playing');
     $('leave').textContent = 'Give up';
     mine.started = true; mine.over = mine.iAsk = mine.theyAsk = false;
-    if (!mine.solo) mine.them = players[1 - seat].name;
+    if (mine.solo) return;
+    mine.them = players[1 - seat].name;
+    mine.matchNo = mine.nextNo;
+    keep(mine);
   },
   entry: ({ player }) => { if (player !== mine.seat) mine.heard = Date.now(); },
   ended: ({ score }) => drawScore(mine, score),
@@ -275,27 +284,53 @@ async function playAlone(game, terms) {
 async function play(mine, met, still) {
   const isMidMatch = mine.started && !mine.over;
   mine.wire?.close();
+  mine.wire = null;
   if (!mine.started) waiting('Player found', 'Connecting your two computers.');
   const turn = mine.turn = {}, isNow = () => still() && mine.turn === turn;
-  const [wire, me] = await Promise.all([link(met, { have: mine.iAsk ? null : mine.session?.match ?? null, hideAddress: settings.hideAddress, iceServers: stun ? [{ urls: stun }] : [] }), identity()])
-    .catch((error) => { if (isNow()) setTimeout(() => { if (isNow()) mine.meeting.link(); }, RETRY_MS); throw error; });
-  if (!isNow()) { wire.close(); return; }
-  mine.wire = wire;
-  const name = wire.mode === 'direct' ? 'Direct connection' : 'Through the server';
-  const have = mine.iAsk ? null : mine.session?.match ?? null;
-  if (have && wire.theirs === have) { $('mode').textContent = name; await mine.session.resume(wire); return; }
-  if (isMidMatch) {                                      // the other page was thrown away in the middle of a match
+  const isSame = met.match === mine.matchNo, have = isSame ? mine.session?.match ?? null : null;
+  try {
+    const [wire, me] = await Promise.all([link(met, { have, hideAddress: settings.hideAddress, iceServers: stun ? [{ urls: stun }] : [] }), identity()]);
+    if (!isNow()) { wire.close(); return; }
+    mine.wire = wire;
+    mine.tries = 0;
+    const mode = wire.mode === 'direct' ? 'Direct connection' : 'Through the server';
+    if (have && wire.theirs === have) { $('mode').textContent = mode; await mine.session.resume(wire); }
+    else if (isSame || wire.theirs) pageGone(mine, isMidMatch);
+    else { await playNew(mine, met, { wire, me, mode, still, isNow }); return; }
+    if (mine.over && mine.iAsk) mine.meeting.again();
+  } catch (error) {
+    if (!isNow()) return;
+    if (mine.wire && !mine.started) { leave(error.message); return; }
+    retry(mine, isNow);
+  }
+}
+/* The line did not come about: once more, but not for ever. */
+function retry(mine, isNow) {
+  if (++mine.tries <= MAX_TRIES) { setTimeout(() => { if (isNow()) mine.meeting.link(); }, RETRY_MS); return; }
+  if (!mine.started) { leave('Your two computers could not be connected. Please try again.'); return; }
+  if (!mine.over) say('The connection could not be brought back. You can leave the match.');
+}
+/* One of the two pages was closed and has lost the match. The room is still there. */
+function pageGone(mine, isMidMatch) {
+  if (mine.over) return;
+  if (isMidMatch) {
     const { session } = mine;
     stop(mine, `${theirName(mine)} lost the match when the app closed.`);
     report(mine, session.transcript());
     session.close();
     return;
   }
-  if (wire.theirs) { wire.close(); mine.started = mine.over = true; screen('match'); say('The match was lost when this page closed.'); offerAgain(mine); return; }
+  mine.started = mine.over = true;
+  screen('match');
+  say('Your match ended when this page closed.');
+  offerAgain(mine);
+}
+async function playNew(mine, met, { wire, me, mode, still, isNow }) {
   mine.session?.close();
   mine.started = false;
   mine.isLive = true;
-  if (!(await openTable(mine, name, isNow))) return;
+  if (!(await openTable(mine, mode, isNow))) return;
+  mine.nextNo = met.match;
   const terms = { ...mine.terms, ranked: !!mine.terms.ranked && !!met.ticket };
   if (met.host) say('Waiting for the other player to accept your rules');
   const isMine = () => still() && mine.session === session;   // also after the line came back
@@ -379,6 +414,10 @@ $('sound').onclick = () => { settings.sound = !settings.sound; drawSound(); curr
 drawSound();
 ({ server, stun, games: library } = await desk.games());
 drawLibrary();
+/* Saved rules, or null when they are not rules of this game. */
+function rulesOf(game, terms) {
+  try { return terms && { ...cleanTerms(game.options, { ...terms, ranked: false, ticket: null }), ranked: terms.ranked === true }; } catch { return null; }
+}
 /* A link from an invite. A link alone connects nobody: the other player would learn this player's address. */
 const invite = readInvite(location.hash, library);
 if (location.hash) history.replaceState(null, '', location.pathname);
@@ -395,4 +434,4 @@ if (invite) {
   $('invitedNo').onclick = () => screen('library');
   screen('invited');
   $('invitedTitle').focus();
-} else if (savedGame) begin(savedGame, { t: 'back', back: saved.back }, saved.terms, saved.accepted);
+} else if (savedGame) begin(savedGame, { t: 'back', back: saved.back }, rulesOf(savedGame, saved.terms) ?? lastTerms(savedGame.id), rulesOf(savedGame, saved.accepted), saved.matchNo);

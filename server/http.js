@@ -1,12 +1,16 @@
 /* Over plain HTTP: GET /leaderboard?game=<id>, POST /result?ticket=<id>, GET /health, and the public pages (site.js). */
 const MAX_RESULT_BYTES = 4 * 1024 * 1024;
+const MAX_TICKETS = 200_000;
 const GAME = /^[a-z0-9-]{1,40}$/;
 
 /* A ticket names one match this server introduced. Only such a match can be ranked. */
-export function createTickets(lifeMs) {
+export function createTickets(lifeMs, max = MAX_TICKETS) {
   const all = new Map();
   return {
-    add: (ticket, { key, pubs }) => all.set(ticket, { key, pubs, until: Date.now() + lifeMs, pending: null, outcome: null }),
+    add(ticket, { key, pubs }) {
+      if (all.size >= max) all.delete(all.keys().next().value);
+      all.set(ticket, { key, pubs, until: Date.now() + lifeMs, pending: null, outcome: null });
+    },
     get: (ticket) => { const t = all.get(ticket); return t && t.until > Date.now() ? t : null; },
     sweep: () => { const now = Date.now(); for (const [id, t] of all) if (t.until <= now) all.delete(id); },
   };

@@ -61,12 +61,12 @@ export function meet({ url, key, ask, on, Socket = globalThis.WebSocket, againMs
       if (Number.isInteger(msg.epoch)) epoch = msg.epoch;
       on.seat?.({ back, host: msg.host === true, met: epoch > 0 });
     } else if (PASSED.includes(msg.t)) { if (msg.t === 'away') peer?.lost(); on[msg.t]?.(msg); }
-    else if (msg.t === 'expired' || msg.t === 'left') end(msg.t);
+    else if (msg.t === 'expired' || msg.t === 'left' || msg.t === 'taken') end(msg.t);
     else if (msg.t === 'paired' && Number.isInteger(msg.epoch)) {
       const own = epoch = msg.epoch;
       peer?.lost();
       peer = { signal: () => {}, relay: () => {}, lost: () => {} };
-      on.paired({ host: msg.host === true, ticket: typeof msg.ticket === 'string' ? msg.ticket : null, theirPub: typeof msg.pub === 'string' ? msg.pub : null, peer,
+      on.paired({ host: msg.host === true, ticket: typeof msg.ticket === 'string' ? msg.ticket : null, theirPub: typeof msg.pub === 'string' ? msg.pub : null, match: msg.match, peer,
         send: (out) => { if (own === epoch) say({ ...out, epoch: own }); } });
     } else if (msg.epoch === epoch && (msg.t === 'signal' || msg.t === 'relay')) peer?.[msg.t](msg.data);
   };

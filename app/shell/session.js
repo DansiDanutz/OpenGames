@@ -31,7 +31,7 @@ const signedMove = (match, player, n, move) => ({ match, player, n, move });
 const signedEntry = (e) => ({ seq: e.seq, prev: e.prev, player: e.player, n: e.n, move: e.move, sig: e.sig, fingerprint: e.fingerprint });
 const MAX_MOVE_BYTES = 1400;           // so that a whole match always fits what the server takes
 const isSmall = (move) => enc.encode(JSON.stringify(move) ?? '').length <= MAX_MOVE_BYTES;
-const MAX_WAITING = 128, MAX_ENTRIES = 2000, MAX_PROPOSALS_PER_SECOND = 40, HANDSHAKE_MS = 15000, TERMS_MS = 120000;
+const MAX_WAITING = 128, MAX_ENTRIES = 2000, MAX_PROPOSALS_PER_SECOND = 40, HANDSHAKE_MS = 15000, PACE = 10, PACE_MS = 500, TERMS_MS = 120000;
 
 /* table: what the game's page gives us
      start({ seed, me, players, terms, sound }) -> fingerprint
@@ -44,7 +44,7 @@ export class Session {
   #me; #them; #name; #secret; #commit; #match; #head; #seq = 0; #sentN = 0; #seenN = [0, 0];
   #queue = Promise.resolve(); #inbox = Promise.resolve(); #waiting = 0; #closed = false; #over = false; #log = [];
   #sending = Promise.resolve(); #handshakeMs; #termsMs; #terms = null; #ticket; #theirPub; #sound; #accepted = false; #reviewing = false; #timer = null; #rate = { second: 0, used: 0 };
-  #unseen = new Map(); #isCaughtUp = true;
+  #unseen = new Map(); #isCaughtUp = true; #isAsked = false;
 
   constructor({ wire, table, identity, host, game, name, on, terms = {}, ticket = null, theirPub = null, sound = true, handshakeMs = HANDSHAKE_MS, termsMs = TERMS_MS }) {
     this.#handshakeMs = handshakeMs; this.#termsMs = termsMs; this.#ticket = ticket; this.#theirPub = theirPub; this.#sound = sound;
@@ -76,7 +76,7 @@ export class Session {
     wire.onClose = () => {
       const lost = () => {
         if (wire !== this.#wire || this.#closed) return;
-        if (this.#match && this.#on.lost) { this.#isCaughtUp = false; if (!this.#over) this.#on.lost(); } else this.#fail('The connection was lost.');
+        if (this.#match && this.#on.lost) { this.#isCaughtUp = this.#isAsked = false; if (!this.#over) this.#on.lost(); } else this.#fail('The connection was lost.');
       };
       if (this.#reviewing) lost(); else this.#inbox = this.#inbox.then(lost);
     };
@@ -91,6 +91,7 @@ export class Session {
       if (this.#closed) { wire.close(); return; }
       this.#wire.close();
       this.#wire = wire;
+      this.#isAsked = false;
       if (!this.#host) wire.send({ t: 'resume', match: this.#match, seq: this.#seq });
       this.#listen();
     }).catch(() => this.#fail('The match could not continue.'));
@@ -98,25 +99,38 @@ export class Session {
   }
   /* Host only, after everything that already arrived has its place. */
   #resumed({ match, seq }) {
-    if (this.#isCaughtUp || match !== this.#match || !Number.isInteger(seq) || seq < 0 || seq > this.#log.length) return this.#fail('The other computer sent something this app does not understand.');
-    this.#queue = this.#queue.then(() => {
-      if (this.#closed) return;
-      for (const entry of this.#log.slice(seq)) this.#wire.send({ t: 'entry', entry });
+    if (this.#isCaughtUp || this.#isAsked || match !== this.#match || !Number.isInteger(seq) || seq < 0 || seq > this.#log.length) return this.#fail('The other computer sent something this app does not understand.');
+    this.#isAsked = true;
+    this.#queue = this.#queue.then(async () => {
+      if (!(await this.#paced(this.#log.slice(seq).map((entry) => ({ t: 'entry', entry }))))) return;
       this.#wire.send({ t: 'caught', n: this.#seenN[1] });
       this.#isCaughtUp = true;
       this.#on.resumed?.();
     });
     return undefined;
   }
+  /* Nobody accepts a whole outage at once. False when this line is gone before the end. */
+  async #paced(messages) {
+    const wire = this.#wire;
+    const isGone = () => this.#closed || wire !== this.#wire || !this.#isAsked;
+    for (const [i, msg] of messages.entries()) {
+      if (i && i % PACE === 0) await new Promise((resolve) => { setTimeout(resolve, PACE_MS); });
+      if (isGone()) return false;
+      wire.send(msg);
+    }
+    return !isGone();
+  }
   /* Guest only: what the host never got is sent again; what it got and did not take was refused. */
   #caught(n) {
-    if (this.#isCaughtUp || !Number.isInteger(n)) return this.#fail('The other computer sent something this app does not understand.');
-    this.#isCaughtUp = true;
-    for (const [k, proposal] of this.#unseen) {
-      if (k > n) this.#wire.send(proposal);
-      else { this.#unseen.delete(k); this.#table.refused('The move was not accepted.'); }
-    }
-    this.#on.resumed?.();
+    if (this.#isCaughtUp || this.#isAsked || !Number.isInteger(n)) return this.#fail('The other computer sent something this app does not understand.');
+    this.#isAsked = true;
+    for (const k of this.#unseen.keys()) if (k <= n) { this.#unseen.delete(k); this.#table.refused('The move was not accepted.'); }
+    // In the same queue as new moves, so the numbers stay in order.
+    this.#sending = this.#sending.then(async () => {
+      if (!(await this.#paced([...this.#unseen.values()]))) return;
+      this.#isCaughtUp = true;
+      this.#on.resumed?.();
+    });
     return undefined;
   }
 

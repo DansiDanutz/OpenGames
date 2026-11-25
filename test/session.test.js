@@ -248,3 +248,20 @@ test('odd messages about coming back end the match, and cost little', async () =
   q.host.wire.send({ t: 'caught', n: 0 });
   await until(() => q.guest.failed);
 });
+
+test('a long outage does not send more at once than the other side takes', async () => {
+  const p = await pair({ stays: true });
+  cutOff(p);
+  await until(() => p.guest.lost);
+  for (let i = 0; i < 45; i++) await p.guest.session.play(inRound(p.guest, { type: 'nonsense', i }));
+  let most = 0, second = 0, sent = 0;
+  await again(p, { tamper: (m) => {
+    if (m.t !== 'propose') return m;
+    const now = Math.floor(Date.now() / 1000);
+    sent = now === second ? sent + 1 : 1; second = now; most = Math.max(most, sent);
+    return m;
+  } });
+  await until(() => p.guest.table.refusals.length === 45, 8000);
+  assert.deepEqual([p.host.failed, p.guest.failed], [null, null]);
+  assert.ok(most > 0 && most <= 30, `${most} in one second`);
+});

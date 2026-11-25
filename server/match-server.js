@@ -8,7 +8,7 @@ import { createTickets, answerHttp } from './http.js';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LIMITS = { maxBytes: 26 * 1024, perSecond: 80, bytesPerSecond: 64 * 1024, buffered: 256 * 1024, perAddress: 20, opensPerMinute: 60,
-  waitMs: 60 * 60 * 1000, findMs: 10 * 60 * 1000, awayMs: 10 * 60 * 1000, seatMs: 60 * 1000, roomMs: 12 * 60 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, invitesPerAddress: 20, pingMs: 30 * 1000, minuteMs: 60 * 1000,
+  waitMs: 60 * 60 * 1000, findMs: 10 * 60 * 1000, awayMs: 10 * 60 * 1000, seatMs: 60 * 1000, againMs: 5000, roomMs: 12 * 60 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, invitesPerAddress: 20, pingMs: 30 * 1000, minuteMs: 60 * 1000,
   quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, pagesPerMinute: 600, findsPerMinute: 30, bodyMs: 25_000, playedMs: 60 * 1000 };
 const CODE_LENGTH = 8;
 const BACK = /^[A-Z2-9]{8}\.[0-9a-f-]{36}$/;          // the code of a room and the secret of a seat
@@ -60,22 +60,31 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   /* A room holds two players for as many matches as they like, and outlives their connections: a phone that shows
      another app cuts its own. `back` proves whose seat it is. */
   const emptySeat = () => ({ ws: null, back: null, pub: null, address: null, wants: null, timer: null });
-  function openRoom(ws, key) {
+  function openRoom(ws, key, isInvite = true) {
     const code = newCode();
-    const room = { code, key, seats: [emptySeat(), emptySeat()], epoch: 0, born: Date.now(), ticket: null, address: ws.og.address, timer: null, away: null, played: null };
+    const room = { code, key, seats: [emptySeat(), emptySeat()], epoch: 0, match: 0, began: 0, born: Date.now(), ticket: null, address: isInvite ? ws.og.address : null, timer: null, away: null, played: null, soon: null };
     rooms.set(code, room);
-    seen(room.address).invites += 1;
+    if (isInvite) seen(room.address).invites += 1;
     expire(room, L.waitMs);
     sit(room, 0, ws);
     return room;
   }
   function sit(room, i, ws) {
     const seat = room.seats[i];
-    if (seat.ws && seat.ws !== ws) { seat.ws.og.room = null; seat.ws.terminate(); }
+    if (seat.ws && seat.ws !== ws) { const old = seat.ws; old.og.room = null; tell(old, { t: 'taken' }); old.close(1000); hush(old); }
     Object.assign(seat, { ws, back: seat.back ?? `${room.code}.${randomUUID()}`, pub: seat.pub ?? ws.og.pub, address: ws.og.address, wants: null });
     ws.og.room = room; ws.og.seat = i;
-    clearTimeout(room.away); clearTimeout(seat.timer);
+    clearTimeout(seat.timer);
+    mind(room);
     tell(ws, { t: 'seat', back: seat.back, code: room.epoch ? null : room.code, host: i === 0, epoch: room.epoch });
+  }
+  /* A room nobody comes back to ends: after the two have met both must be there, before that one is enough. */
+  function mind(room) {
+    clearTimeout(room.away);
+    const empty = room.seats.filter((s) => !s.ws).length;
+    if (empty < (room.epoch ? 1 : 2)) return;
+    room.away = setTimeout(() => closeRoom(room, 'expired'), L.awayMs);
+    room.away.unref();
   }
   /* A friend who never met the host makes room for another. */
   function freeSeat(room) {
@@ -83,6 +92,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     if (ws) ws.og.room = null;
     if (ws) hush(ws);
     room.seats[1] = emptySeat();
+    mind(room);
   }
   function expire(room, ms) {
     clearTimeout(room.timer);
@@ -95,12 +105,12 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     ws.og.quiet = setTimeout(() => ws.terminate(), L.quietMs);
     ws.og.quiet.unref();
   }
-  const timersOf = (room) => [room.timer, room.away, room.played, room.seats[1].timer];
+  const timersOf = (room) => [room.timer, room.away, room.played, room.soon, room.seats[1].timer];
   function closeRoom(room, why) {
     if (rooms.get(room.code) !== room) return;
     for (const timer of timersOf(room)) clearTimeout(timer);
     rooms.delete(room.code);
-    seen(room.address).invites -= 1;
+    if (room.address) seen(room.address).invites -= 1;
     for (const { ws } of room.seats) if (ws) { ws.og.room = null; tell(ws, { t: why }); hush(ws); }
   }
   /* Tells both players to connect to each other: for a new match, or again for the one they are playing. */
@@ -110,6 +120,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     a.wants = b.wants = null;
     expire(room, Math.min(L.pairMs, room.born + L.roomMs - Date.now()));
     if (isNew) {
+      room.match += 1; room.began = Date.now();
       const canRank = !!leaderboard && !!a.pub && !!b.pub && a.pub !== b.pub && (L.rankSameAddress || a.address !== b.address);
       room.ticket = canRank ? randomUUID() : null;
       if (canRank) tickets.add(room.ticket, { key: room.key, pubs: [a.pub, b.pub] });
@@ -120,7 +131,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
         room.played.unref();
       }
     }
-    room.seats.forEach(({ ws }, i) => tell(ws, { t: 'paired', host: i === 0, epoch: room.epoch, ticket: room.ticket, pub: room.ticket ? room.seats[1 - i].pub : null }));
+    room.seats.forEach(({ ws }, i) => tell(ws, { t: 'paired', host: i === 0, epoch: room.epoch, match: room.match, ticket: room.ticket, pub: room.ticket ? room.seats[1 - i].pub : null }));
   }
   function stopWaiting(ws) {
     clearTimeout(ws.og.timer);
@@ -135,7 +146,14 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     const { room } = ws.og, peer = other(ws);
     if (!room?.epoch || msg.epoch !== room.epoch) return;  // asked before the two were introduced again
     room.seats[ws.og.seat].wants = what;
-    if (peer.ws && peer.wants === what) introduce(room, isNew);
+    if (peer.ws && peer.wants === what) {
+      // Two players who only ask for new matches must not fill the memory.
+      const wait = isNew ? room.began + L.againMs - Date.now() : 0;
+      if (wait <= 0) { introduce(room, isNew); return; }
+      clearTimeout(room.soon);
+      room.soon = setTimeout(() => { if (room.seats.every((s) => s.ws && s.wants === what)) introduce(room, isNew); }, wait);
+      room.soon.unref();
+    }
     else if (peer.ws) tell(peer.ws, { t: what });
   }
 
@@ -179,7 +197,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       if (first) {
         for (const address of new Set([ws.og.address, first.og.address])) seen(address).finds += 1;
         stopWaiting(first);
-        const room = openRoom(first, msg.key);
+        const room = openRoom(first, msg.key, false);
         sit(room, 1, ws);
         return introduce(room, true);
       }
@@ -218,10 +236,8 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       room.seats[1].timer = setTimeout(() => freeSeat(room), L.seatMs);
       room.seats[1].timer.unref();
     }
-    if (peer.ws) { if (room.epoch) tell(peer.ws, { t: 'away' }); return; }
-    clearTimeout(room.away);
-    room.away = setTimeout(() => closeRoom(room, 'expired'), L.awayMs);
-    room.away.unref();
+    mind(room);
+    if (peer.ws && room.epoch) tell(peer.ws, { t: 'away' });
   }
 
   wss.on('connection', (ws, req) => {
