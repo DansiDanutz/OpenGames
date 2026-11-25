@@ -3,6 +3,7 @@ import { Solo } from './solo.js';
 import { createTable } from './table.js';
 import { meet, link } from './wire.js';
 import { createAccount } from './account.js';
+import { showAdmin } from './admin.js';
 import { account, settings, identity, record, soloKey, addResult, lastTerms, saveTerms, myInvite, myRoom } from './store.js';
 import { readInvite } from './invite.js';
 import { cleanTerms } from '/kit/engine.js';
@@ -20,7 +21,7 @@ const TEXT = {
   too_many: 'You met many players in a short time. Please wait a minute and try again.',
   bad_request: 'The match server did not accept that. Please try again.',
 };
-const SCREENS = ['library', 'room', 'terms', 'board', 'signin', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000, RETRY_MS = 1500, MAX_TRIES = 20;
+const SCREENS = ['library', 'room', 'terms', 'board', 'signin', 'invited', 'wait', 'match', 'admin'], IDLE_MS = 3 * 60 * 1000, RETRY_MS = 1500, MAX_TRIES = 20;
 let signedIn = null;
 let server = '', stun = null, library = [], current = null;      // current: { game, meeting, session, table, wire, over }
 
@@ -445,7 +446,9 @@ desk.accountOn().then((ways) => {
   if (!ways) return undefined;
   const { host } = new URL(server);
   for (const note of document.querySelectorAll('.privacyAt')) note.textContent = `More: https://${host}/privacy`;
-  signedIn = createAccount({ desk, host, ways, changed: () => { $('name').value = settings.name; }, close: () => screen(isInvited ? 'invited' : 'library'), beforeGoogle: () => { myInvite.value = isInvited ? inviteHash : ''; } });
+  signedIn = createAccount({ desk, host, ways, changed: () => { $('name').value = settings.name; }, close: () => screen(isInvited ? 'invited' : 'library'), beforeGoogle: () => { myInvite.value = isInvited ? inviteHash : ''; },
+    openAdmin: (load) => showAdmin({ load, show: () => { screen('admin'); $('adminTitle').focus(); } }) });
+  $('adminBack').onclick = () => { signedIn.draw(); screen('signin'); $('signinTitle').focus(); };
   $('account').onclick = () => { if (current) return; signedIn.draw(); screen('signin'); $('signinTitle').focus(); };
   $('account').hidden = false;
   if (!ticket) return signedIn.refresh();

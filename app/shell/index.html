@@ -77,9 +77,18 @@
     <form id="step-email"><label for="emailInput">Your email</label><input id="emailInput" type="email" autocomplete="email" maxlength="200" required><button class="go">Send me a code</button>
       <p class="small">We keep your email address and your name, only for this. No passwords, no newsletters. <span class="privacyAt"></span></p></form>
     <form id="step-code" hidden><label for="codeInput">Code</label><input id="codeInput" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required><button class="go">Sign in</button><button type="button" id="codeAgain">Another address</button></form>
-    <div id="step-in" hidden><div class="row"><button type="button" id="accountLeave">Sign out</button><button type="button" id="accountRemove">Delete my account</button></div></div>
+    <div id="step-in" hidden><div class="row"><button type="button" id="accountLeave">Sign out</button><button type="button" id="accountRemove">Delete my account</button><button type="button" id="adminOpen" hidden>Admin</button></div></div>
     <p id="signinNote" role="status"></p>
     <div class="row"><button type="button" id="signinBack">Back to games</button></div>
+  </div>
+</main>
+
+<main id="admin" hidden>
+  <div class="sheet wide">
+    <h1 id="adminTitle" tabindex="-1">Admin</h1>
+    <p id="adminText" role="status"></p>
+    <div id="adminBody" class="report"></div>
+    <div class="row"><button type="button" id="adminBack">Back to the account</button></div>
   </div>
 </main>
 

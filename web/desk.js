@@ -71,6 +71,8 @@ globalThis.desk = {
     const res = await fetch(`/account/${encodeURIComponent(action)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000), credentials: 'omit', redirect: 'error' });
     return { ok: res.ok, body: await res.json() };
   },
+  /* The admin view opens in a browser only. */
+  canAdmin: true,
   leaderboard: (id) => ask(`/leaderboard?game=${find(id).id}`),
   async openLink(id, kind) {
     const game = find(id), url = kind === 'support' ? game.support : game.sponsor?.url;
