@@ -32,7 +32,9 @@ The player who starts a match chooses the rules: the board, easy or hard, heads-
 **Play alone** uses the same boards and rules against the game's own bot. Nothing is sent anywhere, and it is never ranked. The easy bots are careless on purpose. In Shikaku the bot is slowed to about the pace of a person.
 
 ## Make a game
-A game is a folder with `game.json`, `rules.js`, an icon and a page. Copy `games/shikaku` to start. Games are two-player only.
+Clone this repository and ask your assistant to **make a game**, then to **publish my game**: the skills in `.claude/skills` do the rest (`AGENTS.md` for other assistants). By hand: `node tools/new-game.js my-game "My Game" my-github-name`.
+
+A game is a folder with `game.json`, `rules.js`, an icon and a page. Games are for two players, or one against the bot.
 
 - `rules.js` exports `setup`, `move`, `result`, `bot` and optionally `view` and `pace`. `bot` is also the opponent of a person who plays alone; it gets only what a player in its seat may see. Rules must give the same answer on every computer: no time, no random numbers of their own, no imports. See `kit/engine.js`.
 - `game.json` lists `options` (what a host may choose) and `howto` (the rules the other player reads).
