@@ -12,7 +12,7 @@ const hex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padSt
 const unhex = (s) => new Uint8Array((s.match(/../g) || []).map((x) => parseInt(x, 16)));
 export const sha256 = async (text) => hex(await crypto.subtle.digest('SHA-256', enc.encode(text)));
 const isHex = (s, n) => typeof s === 'string' && s.length === n && /^[0-9a-f]+$/.test(s);
-export const cleanName = (s) => String(s ?? '').replace(/[\p{C}\s]+/gu, ' ').trim().slice(0, 24) || 'Player';
+export const cleanName = (s) => String(s ?? '').replace(/[\p{C}\s<>&"`]+/gu, ' ').replaceAll("'", '’').trim().slice(0, 24) || 'Player';
 
 export async function createIdentity() {
   const keys = await crypto.subtle.generateKey('Ed25519', false, ['sign', 'verify']);
@@ -28,7 +28,7 @@ async function verified(pub, sig, value) {
 }
 const signedMove = (match, player, n, move) => ({ match, player, n, move });
 const signedEntry = (e) => ({ seq: e.seq, prev: e.prev, player: e.player, n: e.n, move: e.move, sig: e.sig, fingerprint: e.fingerprint });
-const MAX_WAITING = 128;
+const MAX_WAITING = 128, MAX_ENTRIES = 2000, MAX_PROPOSALS_PER_SECOND = 40, HANDSHAKE_MS = 15000;
 
 /* table: what the game's page gives us
      start({ seed, me, players }) -> fingerprint
@@ -39,8 +39,10 @@ export class Session {
   #wire; #table; #on; #identity; #host; #game;
   #me; #them; #name; #secret; #commit; #match; #head; #seq = 0; #sentN = 0; #seenN = [0, 0];
   #queue = Promise.resolve(); #inbox = Promise.resolve(); #waiting = 0; #closed = false; #over = false; #log = [];
+  #sending = Promise.resolve(); #handshakeMs; #timer = null; #rate = { second: 0, used: 0 };
 
-  constructor({ wire, table, identity, host, game, name, on }) {
+  constructor({ wire, table, identity, host, game, name, on, handshakeMs = HANDSHAKE_MS }) {
+    this.#handshakeMs = handshakeMs;
     this.#wire = wire; this.#table = table; this.#identity = identity; this.#host = host;
     this.#game = game; this.#name = cleanName(name); this.#on = on;
     this.#me = host ? 0 : 1;
@@ -50,6 +52,7 @@ export class Session {
   open() {
     this.#inbox = this.#inbox.then(() => this.#greet()).catch(() => this.#fail('The match could not start.'));
     const greeted = this.#inbox;
+    this.#timer = setTimeout(() => this.#fail('The other computer did not start the match.'), this.#handshakeMs);
     const wire = this.#wire;                // listening starts here: their greeting may already be waiting
     wire.onMessage = (msg) => {
       if (this.#closed) return;
@@ -68,16 +71,24 @@ export class Session {
   }
 
   /* The page wants to play a move. */
-  async play(move) {
+  play(move) {
+    this.#sending = this.#sending.then(() => this.#send(move)).catch(() => this.#table.refused('That move could not be sent.'));
+    return this.#sending;
+  }
+
+  /* One at a time, so the numbers always go out in order. */
+  async #send(move) {
     if (this.#closed || this.#over || !this.#match) return;
+    canonical(move);
     const n = ++this.#sentN;
     const sig = await sign(this.#identity, signedMove(this.#match, this.#me, n, move));
     const proposal = { player: this.#me, n, move, sig };
+    if (this.#closed) return;
     if (this.#host) this.#enqueue(proposal);
     else this.#wire.send({ t: 'propose', n, move, sig });
   }
 
-  close() { this.#closed = true; this.#wire.close(); }
+  close() { this.#closed = true; clearTimeout(this.#timer); this.#wire.close(); }
 
   /* Everything a referee needs to play the match again. */
   transcript() {
@@ -91,7 +102,7 @@ export class Session {
     if (msg?.t === 'reveal') return this.#reveal(msg);
     if (msg?.t === 'propose' && this.#host && this.#match) return this.#proposed(msg);
     if (msg?.t === 'entry' && !this.#host && this.#match) return this.#entry(msg.entry);
-    if (msg?.t === 'refused' && !this.#host && this.#match) return this.#table.refused(String(msg.error ?? '').slice(0, 200));
+    if (msg?.t === 'refused' && !this.#host && this.#match) return this.#table.refused('The move was not accepted.');
     return this.#fail('The other computer sent something this app does not understand.');
   }
 
@@ -116,16 +127,21 @@ export class Session {
     this.seed = await sha256(`seed|${pair[0].secret}|${pair[1].secret}`);
     this.players = pair.map(({ pub, name }) => ({ pub, name }));
     const match = await sha256(canonical({ game: this.#game.id, hash: this.#game.hash, seed: this.seed, players: pair.map((p) => p.pub) }));
+    if (this.#closed) return undefined;
     const fingerprint = await this.#table.start({ seed: this.seed, me: this.#me, players: pair.map((p) => ({ name: p.name })) });
     if (this.#closed) return undefined;
     this.#head = await sha256(`${match}|${fingerprint}`);
     this.#match = match;
+    clearTimeout(this.#timer);
     this.#on.started?.({ me: this.#me, players: this.players });
     return undefined;
   }
 
   async #proposed(msg) {
     const p = { player: 1, n: msg.n, move: msg.move, sig: msg.sig };
+    const second = Math.floor(Date.now() / 1000);
+    this.#rate = { second, used: this.#rate.second === second ? this.#rate.used + 1 : 1 };
+    if (this.#rate.used > MAX_PROPOSALS_PER_SECOND) return this.#fail('The other computer sent too much at once.');
     if (!Number.isInteger(p.n) || p.n <= this.#seenN[1]) return this.#fail('The other computer repeated a move.');
     if (!(await verified(this.#them.pub, p.sig, signedMove(this.#match, 1, p.n, p.move)))) return this.#fail('A move was not signed by the other player.');
     this.#seenN[1] = p.n;
@@ -160,6 +176,7 @@ export class Session {
     const author = this.players[e.player].pub;
     if (!(await verified(author, e.sig, signedMove(this.#match, e.player, e.n, e.move)))
       || !(await verified(this.players[0].pub, e.hsig, signedEntry(e)))) return this.#fail('A move was not signed by its player.');
+    if (this.#closed) return undefined;
     const out = await this.#table.tryMove(e.player, e.move);
     if (!out.ok) return this.#fail(`The other computer made a move the rules do not allow (${out.error}).`);
     if (out.fingerprint !== e.fingerprint) return this.#fail('The two computers disagree about the game.');
@@ -171,10 +188,12 @@ export class Session {
     this.#seq = entry.seq;
     this.#head = await sha256(canonical(signedEntry(entry)));
     this.#log.push(entry);
+    if (this.#log.length >= MAX_ENTRIES && !out.result) return this.#fail('The match is too long.');
     this.#on.entry?.(entry);
-    if (!out.result) return;
+    if (!out.result) return undefined;
     this.#over = true;
     this.#on.over?.({ result: out.result, me: this.#me, transcript: this.transcript() });
+    return undefined;
   }
 
   #fail(reason) {

@@ -52,13 +52,15 @@ export function readManifest(dir) {
   if (problems.length) throw new Error(problems.join('; '));
   return m;
 }
-export function readLibrary(root) {
+/* Two computers only meet when the game and the shared kit are the same. */
+export function readLibrary(root, kit) {
+  const shared = ['engine.js', 'ui.js'].map((f) => sha256(fs.readFileSync(path.join(kit, f)))).join('|');
   return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((e) => {
     const dir = path.join(root, e.name);
     try {
       const { id, name, version, author, license, summary, minutes, page } = readManifest(dir);
       if (id !== e.name) throw new Error('the folder must have the same name as the id');
-      return [{ id, name, version, author, license, summary, minutes, page, hash: hashGame(dir), dir }];
+      return [{ id, name, version, author, license, summary, minutes, page, hash: sha256(`${hashGame(dir)}|${shared}`), dir }];
     } catch (error) {
       console.error(`The game in ${e.name} was left out: ${error.message}`);
       return [];

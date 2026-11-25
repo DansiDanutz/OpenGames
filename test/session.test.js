@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Match } from '../kit/engine.js';
 import * as shikaku from '../games/shikaku/rules.js';
-import { verifyTranscript } from '../app/shell/session.js';
-import { GAME, pair, solution, until } from './helpers.js';
+import { Session, cleanName, createIdentity, verifyTranscript } from '../app/shell/session.js';
+import { GAME, pair, solution, tableFor, until, wires } from './helpers.js';
 
 const referee = (t) => verifyTranscript(t, (seed) => new Match(shikaku, { seed, players: 2 }));
 
@@ -120,4 +120,36 @@ test('a player whose game opens later still starts the match', async () => {
   assert.equal(host.failed ?? guest.failed, null);
   await guest.session.play(solution(guest));
   await until(() => host.over && guest.over);
+});
+test('moves made at the same moment arrive in order', async () => {
+  const { host, guest } = await pair();
+  await Promise.all([1, 2, 3, 4, 5, 6].flatMap((cells) => [guest, host].map((s) => s.session.play({ type: 'cover', cells }))));
+  await until(() => host.table.view().covered.join() === '6,6' && guest.table.view().covered.join() === '6,6');
+  assert.equal(host.failed ?? guest.failed, null);
+});
+test('a move that cannot be sent is refused and the match goes on', async () => {
+  const { host, guest } = await pair();
+  await guest.session.play({ cells: NaN });
+  assert.equal(guest.table.refusals.length, 1);
+  await guest.session.play(solution(guest));
+  await until(() => host.over);
+});
+test('an opponent who never answers the greeting does not keep you waiting', async () => {
+  const [wire] = wires();
+  let failed = null;
+  const s = new Session({ wire, table: tableFor(shikaku), identity: await createIdentity(), host: true, game: GAME, name: 'Ann', handshakeMs: 30, on: { failed: (r) => { failed = r; } } });
+  s.open();
+  await until(() => failed);
+  assert.match(failed, /did not start/);
+});
+test('a stream of moves ends the match', async () => {
+  const { host, guest } = await pair();
+  for (let i = 0; i < 60; i++) guest.session.play({ type: 'cover', cells: i % 30 });
+  await until(() => host.failed);
+  assert.match(host.failed, /too much/);
+});
+test('names carry no markup', () => {
+  assert.equal(cleanName('<img src=x onerror="a()">'), 'img src=x onerror= a()');
+  assert.equal(cleanName("O'Neil\u202e"), 'O’Neil');
+  assert.equal(cleanName('<>'), 'Player');
 });

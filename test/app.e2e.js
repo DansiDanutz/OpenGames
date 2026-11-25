@@ -122,12 +122,15 @@ try {
     tries.image = await new Promise((r) => { const i = new Image(); i.onload = () => r('reached'); i.onerror = () => r('blocked'); i.src = 'http://127.0.0.1:${server.port}/x.png'; });
     tries.frame = await new Promise((r) => { const f = document.createElement('iframe'); f.srcdoc = '<p>x'; f.onload = () => { try { r(typeof f.contentWindow.RTCPeerConnection); } catch { r('undefined'); } }; document.body.append(f); setTimeout(() => r('blocked'), 1000); });
     tries.popup = window.open('https://example.com') === null ? 'blocked' : 'reached';
+    const fr = document.createElement('iframe'); document.body.append(fr);
+    const before = Date.now(); alert('x'); confirm('x'); fr.contentWindow?.alert?.('x'); tries.dialog = Date.now() - before < 500 ? 'blocked' : 'shown'; fr.remove();
+    tries.copy = document.execCommand('copy') ? 'copied' : 'blocked';
     tries.location = location.href;
     return tries;
   })()`);
   console.log('Game tried:', JSON.stringify(probe));
   assert.deepEqual({ ...probe, location: '', frame: '' }, { require: 'undefined', process: 'undefined', desk: 'undefined', rtc: 'undefined', transport: 'undefined',
-    fetch: 'blocked', shell: 'blocked', socket: 'blocked', image: 'blocked', frame: '', popup: 'blocked', location: '' });
+    fetch: 'blocked', shell: 'blocked', socket: 'blocked', image: 'blocked', frame: '', popup: 'blocked', dialog: 'blocked', copy: 'blocked', location: '' });
   const control = await listeners(), target = await listeners();
   await ann.page.evaluate(leak(control, false));
   const tried = [await inGame(ann, leak(target, false)), await inGame(ann, leak(target, true))];
@@ -165,7 +168,19 @@ try {
   await ann.page.click('#leave');
   await ann.page.waitForSelector('text=You won 1 and lost 1');
 
-  // The server is off, and a wrong code.
+  // Games opened and closed quickly: the last one works. A game that floods the app is closed.
+  const carl = await open('Carl');
+  for (let i = 0; i < 4; i++) { await ann.page.click('text=Find a player'); await ann.page.click('#cancel'); }
+  for (let i = 0; i < 2; i++) {
+    await invite(ann, carl);
+    if (i) await inGame(carl, 'for (let n = 0; n < 1000; n++) opengames.send({ t: "x", n }); 0').catch(() => {});
+    else await carl.page.click('#leave');
+    await status(ann, i ? /connection was lost/ : /gave up/);
+    if (i) await status(carl, /stopped working/);
+    for (const p of [ann, carl]) await p.page.click('#leave');
+  }
+  await ann.page.waitForSelector('text=You won 2 and lost 1');   // the closed match did not count
+  // A wrong code, then the server is off.
   await ann.page.fill('.join input', 'AAAAAA');
   await ann.page.click('.join button');
   await ann.page.waitForSelector('text=There is no open match with that code.');

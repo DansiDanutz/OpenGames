@@ -7,6 +7,7 @@ import { hashGame, readLibrary, readManifest, resolveFile } from '../app/library
 import { createTable, cleanResult } from '../app/shell/table.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
+const KIT = path.join(ROOT, 'kit');
 const copyGame = (t) => {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'og-')), 'shikaku');
   fs.cpSync(path.join(ROOT, 'games/shikaku'), dir, { recursive: true });
@@ -14,11 +15,11 @@ const copyGame = (t) => {
   return dir;
 };
 test('the library lists Shikaku and leaves broken games out', (t) => {
-  assert.deepEqual(readLibrary(path.join(ROOT, 'games')).map((g) => g.id), ['shikaku']);
+  assert.deepEqual(readLibrary(path.join(ROOT, 'games'), KIT).map((g) => g.id), ['shikaku']);
   const dir = copyGame(t);
   t.mock.method(console, 'error', () => {});
   fs.writeFileSync(path.join(dir, 'game.json'), '{}');
-  assert.deepEqual(readLibrary(path.dirname(dir)), []);
+  assert.deepEqual(readLibrary(path.dirname(dir), KIT), []);
 });
 test('changing any file changes the version of a game', (t) => {
   const dir = copyGame(t), before = hashGame(dir);
@@ -54,4 +55,12 @@ test('a game page that is silent or lies is not believed', async () => {
   await assert.rejects(reply({ ok: true, fingerprint: 'a'.repeat(16), result: { winner: 5 } }), /does not understand/);
   assert.deepEqual(await reply({ ok: 'yes' }), { ok: false, error: 'not allowed' });
   assert.deepEqual(cleanResult({ winner: 1, reason: 9, extra: 1 }), { winner: 1, reason: '' });
+});
+test('changing the shared kit changes the version players must share', (t) => {
+  const kit = fs.mkdtempSync(path.join(os.tmpdir(), 'og-kit-'));
+  t.after(() => fs.rmSync(kit, { recursive: true }));
+  fs.cpSync(KIT, kit, { recursive: true });
+  const hash = () => readLibrary(path.join(ROOT, 'games'), kit)[0].hash, before = hash();
+  fs.appendFileSync(path.join(kit, 'engine.js'), ' ');
+  assert.notEqual(hash(), before);
 });

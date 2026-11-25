@@ -24,13 +24,15 @@ A game is a folder with `game.json`, `rules.js` and a page. Copy `games/shikaku`
 
 `node kit/check.js games/my-game` plays 20 matches with your `bot` on two engines and refuses the game if they ever disagree. Run it on your own code only.
 
+Treat the other player's name as untrusted text: use `textContent`, never `innerHTML`.
+
 A game page has no network, files, camera or other permissions. Its only way out is the message port in `kit/ui.js`.
 
 ## Known limits
 - **Hidden cards:** both computers know the whole position, so a cheater can look at secret hands. Only games without secrets are safe so far.
 - **Computer help:** a program can solve a puzzle for a player. That is one reason nothing of value can be won.
 - **The host** (the player who waited) puts moves in order, so it has a small advantage when both finish at almost the same moment, and it can ignore the other player's moves. Neither computer can prove that.
-- **Leaving:** a lost connection does not count for anybody, so a losing player can quit.
+- **Leaving:** a lost connection does not count for anybody, so a losing player can quit. A player who sees the start of a match and dislikes it can quit too.
 - **Direct connections** work on the same network. Across the internet most matches will use the server until we run our own address service (STUN).
 - **Results** are kept on your computer only. There is no ranking.
 - **Names** are not unique. Do not use one to decide who somebody is.

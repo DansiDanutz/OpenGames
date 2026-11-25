@@ -77,13 +77,15 @@ async function play(mine, met, still) {
   const [wire, me] = await Promise.all([link(met, { hideAddress: settings.hideAddress }), identity()]);
   mine.wire = wire;
   if (!still()) { wire.close(); return; }
-  mine.table = createTable({ send: (msg) => desk.toGame(msg) });
+  mine.token = crypto.randomUUID();                    // messages of an earlier game are ignored
+  mine.table = createTable({ send: (msg) => desk.toGame(mine.token, msg) });
   screen('match');
   $('mode').textContent = wire.mode === 'direct' ? 'Direct connection' : 'Through the server';
   $('status').textContent = 'Starting the game';
   $('leave').textContent = 'Leave';
   $('p0').textContent = $('p1').textContent = '';
-  await desk.openGame(mine.game.id);
+  await desk.openGame(mine.game.id, mine.token);
+  if (!still()) return;
   await placeGame();
   await Promise.race([mine.table.ready, new Promise((_, no) => setTimeout(() => no(new Error('The game did not open.')), 10000))]);
   if (!still()) return;
@@ -132,7 +134,7 @@ $('name').onchange = () => { settings.name = $('name').value; $('name').value = 
 $('hide').onchange = () => { settings.hideAddress = $('hide').checked; };
 addEventListener('resize', placeGame);
 new ResizeObserver(placeGame).observe($('stage'));
-desk.onGame((msg) => current?.table?.receive(msg));
+desk.onGame((token, msg) => { if (current?.token && current.token === token) current.table.receive(msg); });
 desk.onGameGone(() => { if (current && !current.over) { current.session?.close(); current.wire?.close(); stop(current, 'The game stopped working.'); } });
 
 if (!settings.name) settings.name = cleanName(`Player ${Math.floor(1000 + Math.random() * 9000)}`);

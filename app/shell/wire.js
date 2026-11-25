@@ -79,10 +79,12 @@ export function link({ host, peer, send, close }, { hideAddress = false, iceServ
       if (shut || !data || typeof data !== 'object') return;
       if (data.mode && !host && !mode) {
         if (data.mode !== 'direct') { mode = 'relay'; settle(); return; }
+        if (!pc) { lost(); return; }                     // there is nothing direct to use
         mode = 'direct';
         if (channel?.readyState === 'open') settle();
       } else if (data.noDirect && host) choose('relay');
       else if (data.offer && !host) {
+        if (pc) return;                                  // one offer only
         if (!direct) { send({ t: 'signal', data: { noDirect: true } }); return; }
         openConnection();
         await pc.setRemoteDescription(data.offer);
