@@ -9,7 +9,7 @@ import { createTickets, answerHttp } from './http.js';
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LIMITS = { maxBytes: 26 * 1024, perSecond: 80, bytesPerSecond: 64 * 1024, buffered: 256 * 1024, perAddress: 20, opensPerMinute: 60,
   waitMs: 10 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, pingMs: 30 * 1000, minuteMs: 60 * 1000,
-  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, findsPerMinute: 12, bodyMs: 8000 };
+  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, findsPerMinute: 30, bodyMs: 25_000 };
 const CODE_LENGTH = 8;
 const PUB = /^[0-9a-f]{64}$/;
 const KEY = /^[a-z0-9-]{1,40}@[0-9a-f]{64}$/;         // game@hash: only equal versions meet
@@ -76,13 +76,6 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     tell(host, { t: 'paired', host: true, ticket: canRank ? ticket : null, pub: canRank ? pubs[1] : null });
     tell(guest, { t: 'paired', host: false, ticket: canRank ? ticket : null, pub: canRank ? pubs[0] : null });
   }
-  /* Nobody may meet everyone who looks for a player: an address meets only so many a minute. */
-  const isOften = (ws) => {
-    if (seen(ws.og.address).finds < L.findsPerMinute) return false;
-    stopWaiting(ws);
-    tell(ws, { t: 'error', error: 'too_many' });
-    return true;
-  };
   const busy = (ws) => ws.og.peer || ws.og.code || ws.og.queue;
 
   const actions = {
@@ -104,9 +97,10 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     },
     find(ws, msg) {
       if (busy(ws) || !KEY.test(msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
-      if (isOften(ws)) return undefined;
+      // Nobody may meet everyone who looks for a player. Homes and phones share addresses, so the limit is wide.
+      if (seen(ws.og.address).finds >= L.findsPerMinute) return tell(ws, { t: 'error', error: 'too_many' });
       const other = queues.get(msg.key);
-      if (other && !isOften(other)) {
+      if (other) {
         for (const address of new Set([ws.og.address, other.og.address])) seen(address).finds += 1;
         return pair(other, ws, msg.key);
       }

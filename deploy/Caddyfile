@@ -1,0 +1,6 @@
+{$PLAY_DOMAIN} {
+	reverse_proxy server:4310 {
+		# One address, the one Caddy saw. Whatever the visitor claims is thrown away.
+		header_up X-Forwarded-For {remote_host}
+	}
+}

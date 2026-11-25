@@ -125,9 +125,9 @@ shellCall('game:bounds', (b) => {
   gameView.setBounds({ x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) });
 });
 /* Leaderboards live on the match server. The window itself never opens a web address. */
-const HTTP = SERVER.replace(/^ws/, 'http'), ASK_MS = 15_000, MAX_RESULT = 4 * 1024 * 1024;
-async function ask(where, init = {}) {
-  const res = await net.fetch(`${HTTP}${where}`, { ...init, signal: AbortSignal.timeout(ASK_MS), credentials: 'omit', redirect: 'error', bypassCustomProtocolHandlers: true });
+const HTTP = SERVER.replace(/^ws/, 'http'), ASK_MS = 15_000, RESULT_MS = 60_000, MAX_RESULT = 4 * 1024 * 1024;
+async function ask(where, init = {}, ms = ASK_MS) {
+  const res = await net.fetch(`${HTTP}${where}`, { ...init, signal: AbortSignal.timeout(ms), credentials: 'omit', redirect: 'error', bypassCustomProtocolHandlers: true });
   if (!res.ok && res.status !== 422) throw new Error(`the server answered ${res.status}`);
   return res.json();
 }
@@ -138,7 +138,7 @@ shellCall('leaderboard', (game) => {
 shellCall('result', (transcript) => {
   const ticket = transcript?.terms?.ticket, body = JSON.stringify(transcript);
   if (!/^[0-9a-f-]{36}$/.test(ticket ?? '') || body.length > MAX_RESULT) throw new Error('not a ranked match');
-  return ask(`/result?ticket=${ticket}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+  return ask(`/result?ticket=${ticket}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body }, RESULT_MS);
 });
 shellCall('game:send', ({ token, msg } = {}) => { if (gameView && token === gameToken && small(msg)) gameView.webContents.send('app:message', msg); });
 ipcMain.on('game:message', (event, text) => { if (fromGame(event)) fromGameText(text); });
