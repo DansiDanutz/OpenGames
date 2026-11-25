@@ -52,12 +52,21 @@ jobs:
             --providers.docker=true --providers.docker.exposedByDefault=false --entrypoints.web.address=:80 --entrypoints.websecure.address=:443
           export PLAY_DOMAIN=play.test RELEASE=ci TRAEFIK=traefik CURL_OPTIONS=-k
           bash deploy/install-traefik.sh
+          before=$(docker ps -q --filter label=com.docker.compose.project=opengames)
           bash deploy/install-traefik.sh   # a second time changes nothing
+          test "$before" = "$(docker ps -q --filter label=com.docker.compose.project=opengames)"
+          printf 'FROM opengames-server:ci\nCMD ["node", "-e", "process.exit(1)"]\n' | docker build -q -t opengames-server:broken -
+          if RELEASE=broken bash deploy/install-traefik.sh; then exit 1; fi   # a broken release goes back by itself
+          for i in $(seq 1 30); do curl -ksf --resolve play.test:443:127.0.0.1 https://play.test/health && break; sleep 2; done
+          docker ps --format '{{.Image}}' | grep -qx opengames-server:ci
           R="--resolve play.test:443:127.0.0.1"
           curl -ksf $R "https://play.test/leaderboard?game=shikaku"
           test "$(curl -ks -o /dev/null -w '%{http_code}' -m 5 --http1.1 $R -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' https://play.test/ || true)" = 101
           test "$(curl -ks -o /dev/null -w '%{http_code}' --resolve other.test:443:127.0.0.1 https://other.test/health)" = 404
           test "$(docker inspect -f '{{.RestartCount}}' traefik)" = 0
+          # A visitor cannot pretend to be many addresses: the limit of 120 a minute still holds.
+          codes=$(for i in $(seq 1 140); do curl -ks -o /dev/null -w '%{http_code}\n' $R -H "X-Forwarded-For: 203.0.113.$i" "https://play.test/leaderboard?game=shikaku"; done)
+          echo "$codes" | sort | uniq -c; echo "$codes" | grep -qx 429
           python3 - <<'PY'
           import os, socket
           s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(5)
