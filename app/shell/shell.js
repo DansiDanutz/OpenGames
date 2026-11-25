@@ -27,6 +27,13 @@ function notice(text) {
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => { $('notice').textContent = ''; }, 7000);
 }
+/* A winner's stand. */
+function podium() {
+  const make = (tag, props) => { const node = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(props)) node.setAttribute(k, v); return node; };
+  const svg = make('svg', { viewBox: '0 0 18 16', 'aria-hidden': 'true' });
+  svg.append(make('path', { d: 'M0 15V8.5Q0 8 .5 8H5v7zM6.5 15V2.5Q6.5 2 7 2h4q.5 0 .5.5V15zM13 15v-5h4.5q.5 0 .5.5V15z' }));
+  return svg;
+}
 const played = (r, where) => (r.wins + r.losses + r.draws ? `You won ${r.wins} and lost ${r.losses} ${where}.` : '');
 function drawLibrary() {
   $('games').replaceChildren(...library.map((game) => {
@@ -36,14 +43,14 @@ function drawLibrary() {
     const join = el('form', { className: 'join', onsubmit: (e) => { e.preventDefault(); if (code.value.trim()) begin(game, { t: 'join', code: code.value.trim() }); } },
       code, el('button', { textContent: 'Join' }));
     return el('li', {}, el('img', { className: 'art', src: `/icons/${game.id}`, alt: '' }),
-      el('div', {}, el('h3', { textContent: game.name }), el('p', { textContent: game.summary }),
+      el('div', { className: 'about' }, el('h3', { textContent: game.name }), el('p', { textContent: game.summary }),
         el('p', { className: 'facts', textContent: `1 or 2 players, about ${game.minutes} min. By ${game.author}, ${game.license} license.` }),
         el('p', { className: 'facts', textContent: history || 'Not played yet.' })),
       el('div', { className: 'actions' },
         el('button', { className: 'go', type: 'button', textContent: 'Find a player', onclick: () => choose(game, { t: 'find' }) }),
-        el('button', { type: 'button', textContent: 'Invite a friend', onclick: () => choose(game, { t: 'create' }) }),
-        el('button', { type: 'button', textContent: 'Play alone', onclick: () => choose(game, { t: 'solo' }) }), join,
-        el('button', { type: 'button', textContent: 'Leaderboard', onclick: () => showLeaderboard(game) })));
+        el('button', { type: 'button', textContent: 'Play alone', onclick: () => choose(game, { t: 'solo' }) }),
+        el('button', { type: 'button', textContent: 'Invite a friend', onclick: () => choose(game, { t: 'create' }) }), join),
+      el('button', { type: 'button', className: 'ranks', onclick: () => showLeaderboard(game) }, podium(), 'Leaderboard'));
   }));
 }
 function waiting(title, text, code = '') {
