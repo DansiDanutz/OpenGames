@@ -53,7 +53,7 @@ Node 26 or newer. Put a proxy with TLS in front of it, so players use `wss://`. 
 ```sh
 pnpm pack-app --server wss://play.example.org --stun stun:play.example.org:3478
 ```
-The server is built in. The packed app checks its own files, cannot be run as plain Node or debugged, and plays approved games only. Without a signing identity (`CSC_NAME`) it is signed for this computer only; publishing needs an Apple Developer ID and notarization, and a certificate for Windows.
+The server is built in. The packed app checks its own files, cannot be run as plain Node or debugged, and plays approved games only. Without a signing identity (`CSC_NAME`) it is signed for this computer only. To publish on a Mac, set `CSC_NAME` (a Developer ID) and `APPLE_KEYCHAIN_PROFILE` (a notarytool profile). Windows needs a certificate of its own.
 
 ## Known limits
 - **Hidden cards:** both computers know the whole position, so a cheater can look at secret hands. A game can avoid this as Avioane & Bărcuțe does: each fleet stays on its own computer under a seal and is checked at the end. A player who will not answer or show the fleet can only end the match without a result.
