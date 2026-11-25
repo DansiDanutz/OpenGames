@@ -67,8 +67,7 @@ export function answerHttp(context) {
   if (req.method === 'GET' && url.pathname === '/health') return reply(res, 200, { ok: true });
   if (site && req.method === 'GET') {
     try {
-      const answer = site(url.pathname);
-      if (answer) return ++from.reads > limits.readsPerMinute ? reply(res, 429, { error: 'too_many' }) : send(res, answer);
+      if (site.has(url.pathname)) return ++from.pages > limits.pagesPerMinute ? reply(res, 429, { error: 'too_many' }) : send(res, site(url.pathname));
     } catch (error) { return fail(error); }
   }
   if (!leaderboard) return reply(res, 404, { error: 'not_found' });

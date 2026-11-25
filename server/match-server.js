@@ -9,7 +9,7 @@ import { createTickets, answerHttp } from './http.js';
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LIMITS = { maxBytes: 26 * 1024, perSecond: 80, bytesPerSecond: 64 * 1024, buffered: 256 * 1024, perAddress: 20, opensPerMinute: 60,
   waitMs: 10 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, pingMs: 30 * 1000, minuteMs: 60 * 1000,
-  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, findsPerMinute: 30, bodyMs: 25_000, playedMs: 60 * 1000 };
+  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, pagesPerMinute: 240, findsPerMinute: 30, bodyMs: 25_000, playedMs: 60 * 1000 };
 const CODE_LENGTH = 8;
 const PUB = /^[0-9a-f]{64}$/;
 const KEY = /^[a-z0-9-]{1,40}@[0-9a-f]{64}$/;         // game@hash: only equal versions meet
@@ -42,8 +42,8 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   const addressOf = (req) => addressKey((proxies > 0 && String(req.headers['x-forwarded-for'] || '').split(',').at(-proxies)?.trim()) || req.socket.remoteAddress);
   const seen = (address) => {
     const now = Date.now(), old = addresses.get(address);
-    const a = old ?? { count: 0, opens: 0, tries: 0, results: 0, reads: 0, finds: 0, since: now };
-    if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, results: 0, reads: 0, finds: 0, since: now });
+    const a = old ?? { count: 0, opens: 0, tries: 0, results: 0, reads: 0, pages: 0, finds: 0, since: now };
+    if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, results: 0, reads: 0, pages: 0, finds: 0, since: now });
     addresses.set(address, a);
     return a;
   };

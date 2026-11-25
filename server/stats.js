@@ -1,10 +1,12 @@
 /* How often each approved game is played: one number per game and day, and nothing about who played.
-   Only a match between two addresses that lasted a minute is counted, so the numbers are a low estimate. */
+   Only a match between two addresses that lasted a minute is counted, so the numbers are an estimate. */
 import { DatabaseSync } from 'node:sqlite';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const DAYS = 30;
 const LIMITS = { perAddressPerDay: 20, addresses: 50_000 };
+/* One home or company is one address: for IPv6 that is the first three parts (a /48). */
+const homeOf = (a) => (a.includes(':') ? a.split(':').slice(0, 3).join(':') : a);
 const dayOf = (at) => new Date(at).toISOString().slice(0, 10);
 
 /* library: [{ id, hash }], the approved games. */
@@ -26,8 +28,8 @@ export function createStats({ file, library, limits = {}, clock = Date.now }) {
   let today = '', seen = new Map();
   return {
     since,
-    played(key, addresses) {
-      const game = keys.get(key), day = dayOf(clock());
+    played(key, from) {
+      const addresses = from.map(homeOf), game = keys.get(key), day = dayOf(clock());
       if (!game || addresses[0] === addresses[1]) return false;
       if (day !== today) { today = day; seen = new Map(); }
       const marks = addresses.map((a) => `${game} ${a}`);

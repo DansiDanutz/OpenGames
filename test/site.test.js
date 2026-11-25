@@ -41,6 +41,11 @@ test('one address can only add a few matches a day to a game', () => {
   now += DAY;
   assert.equal(add('4'), true);
 });
+test('a large IPv6 network is one address', () => {
+  const s = stats();
+  assert.equal(s.played(keyOf('shikaku'), ['2001:db8:1:1', '2001:db8:1:2']), false);
+  assert.equal(s.played(keyOf('shikaku'), ['2001:db8:1:1', '2001:db8:2:1']), true);
+});
 test('the memory for addresses is limited', () => {
   const s = stats({ limits: { addresses: 2 } });
   assert.deepEqual([s.played(keyOf('shikaku'), ['1', '2']), s.played(keyOf('shikaku'), ['3', '4'])], [true, false]);
@@ -138,7 +143,7 @@ test('without statistics the pages still work', () => {
 });
 test('the server serves the pages beside the leaderboards, within its limits', async () => {
   const leaderboard = createLeaderboard({ file: ':memory:', library: games.map((g) => ({ ...g, rulesPath: path.join(g.dir, g.rules) })) });
-  const s = await startMatchServer({ leaderboard, site: createSite({ games, stats: stats(), ranked: leaderboard.players }), limits: { readsPerMinute: 4 } });
+  const s = await startMatchServer({ leaderboard, site: createSite({ games, stats: stats(), ranked: leaderboard.players }), limits: { pagesPerMinute: 3 } });
   const get = (p, init) => fetch(`http://127.0.0.1:${s.port}${p}`, init);
   const page = await get('/creators/DansiDanutz');
   assert.equal(page.status, 200);

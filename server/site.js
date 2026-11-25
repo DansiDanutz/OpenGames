@@ -72,7 +72,7 @@ ${s ? `${tiles([s.days], s.total)}${chart(g, s.days)}` : ''}
 function dashboard(name, games, { stats, ranked }) {
   const all = stats ? games.map((g) => stats.of(g.id)) : [];
   const overall = games.length > 1 ? `<h2>All games</h2>${tiles(all.map((s) => s.days), all.reduce((n, s) => n + s.total, 0))}` : '';
-  return page(`${name} on OpenGames`, `Games by ${name}`, `<h1>${escape(name)}</h1>${stats ? `<p class="soft">Counted since ${day(stats.since)} ${stats.since.slice(0, 4)}, in UTC days. A match counts when two players in different places stay for a minute, so the numbers are low estimates. Play against the computer is never counted, and nothing about players is kept.</p>${overall}` : '<p class="soft">This server does not count matches.</p>'}
+  return page(`${name} on OpenGames`, `Games by ${name}`, `<h1>${escape(name)}</h1>${stats ? `<p class="soft">Counted since ${day(stats.since)} ${stats.since.slice(0, 4)}, in UTC days. A match counts when two players in different places stay for a minute, so a number is an estimate. Play against the computer is never counted, and nothing about players is kept.</p>${overall}` : '<p class="soft">This server does not count matches.</p>'}
 ${games.map((g) => dashboardGame(g, stats, ranked)).join('')}<h2>What you earn</h2><p>Support and sponsors pay you on your own pages, so your income is only shown there. OpenGames takes 0%. Views of a sponsor line are not counted; show a sponsor the matches above.</p>`);
 }
 
@@ -98,11 +98,14 @@ export function createSite({ games, stats = null, ranked = null }) {
       return own.length > 0 && html(200, dashboard(name, own, { stats, ranked }));
     }],
   ];
-  return (pathname) => {
+  const missing = html(404, page('Not found', 'There is no such page.', '<h1>Not found</h1><p><a href="/">See the games</a></p>'));
+  const site = (pathname) => {
     for (const [pattern, answer] of routes) {
       const m = pattern.exec(pathname);
-      if (m) return answer(...m.slice(1)) || html(404, page('Not found', 'There is no such page.', '<h1>Not found</h1><p><a href="/">See the games</a></p>'));
+      if (m) return answer(...m.slice(1)) || missing;
     }
     return null;
   };
+  site.has = (pathname) => routes.some(([pattern]) => pattern.test(pathname));   // cheap, so limits come before any work
+  return site;
 }
