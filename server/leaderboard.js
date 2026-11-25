@@ -24,6 +24,7 @@ function askReferee(transcript, rules, ms) {
   });
 }
 
+const SAME_PERSON = 'both players are the same person';
 /* library: [{ id, hash, options, rulesPath }], the approved games. owner: whose key this is (accounts.js). */
 export function createLeaderboard({ file, library, limits = {}, referee = askReferee, owner = (pub) => pub }) {
   const L = { ...LIMITS, ...limits };
@@ -39,8 +40,8 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     get: db.prepare('SELECT rating FROM players WHERE game = ? AND pub = ?'),
     result: db.prepare('UPDATE players SET rating = rating + ?, wins = wins + ?, losses = losses + ?, draws = draws + ? WHERE game = ? AND pub = ?'),
     unfinished: db.prepare('UPDATE players SET unfinished = unfinished + ? WHERE game = ? AND pub = ?'),
-    match: db.prepare('SELECT finished FROM matches WHERE ticket = ?'),
-    save: db.prepare('INSERT INTO matches (ticket, game, a, b, finished, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ticket) DO UPDATE SET finished = excluded.finished, at = excluded.at'),
+    match: db.prepare('SELECT finished, a, b FROM matches WHERE ticket = ?'),
+    save: db.prepare('INSERT INTO matches (ticket, game, a, b, finished, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ticket) DO UPDATE SET a = excluded.a, b = excluded.b, finished = excluded.finished, at = excluded.at'),
     recent: db.prepare('SELECT count(*) AS n FROM matches WHERE game = ? AND a = ? AND b = ? AND finished = 1 AND at > ?'),
     move: db.prepare('UPDATE players SET pub = ? WHERE pub = ? AND game NOT IN (SELECT game FROM players WHERE pub = ?)'),
     rows: db.prepare('SELECT game, wins, losses, draws, unfinished FROM players WHERE pub = ?'),
@@ -62,18 +63,19 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     if (!game || `${game.id}@${game.hash}` !== key) return 'not a game of this server';
     if (!Array.isArray(t.players) || t.players.length !== 2 || !t.players.every((p) => isHex64(p?.pub) && cleanName(p.name) === p.name) || t.players[0].pub === t.players[1].pub) return 'not two players';
     if (pubs?.length !== 2 || !t.players.every((p) => pubs.includes(p.pub))) return 'not the players this server introduced';
-    if (owner(t.players[0].pub) === owner(t.players[1].pub)) return 'both players are the same person';
+    if (owner(t.players[0].pub) === owner(t.players[1].pub)) return SAME_PERSON;
     if (!isHex64(t.seed) || !isHex64(t.match) || !Array.isArray(t.entries) || t.entries.length > MAX_ENTRIES) return 'not a match';
     try { if (canonical(cleanTerms(game.options, t.terms)) !== canonical(t.terms)) return 'the rules are not well formed'; } catch { return 'the rules are not well formed'; }
     return t.terms.ranked && t.terms.ticket === ticket ? '' : 'the players did not agree on a ranked match';
   }
   function write(t, ticket, result) {
     const [a, b] = t.players.map((p) => ({ name: p.name, pub: owner(p.pub) })), before = q.match.get(ticket);
+    if (a.pub === b.pub) return { ok: false, error: SAME_PERSON };          // signed in while the referee was busy
     if (before?.finished || (before && !result)) return { ok: true, finished: !!before.finished, counted: false };
     const [x, y] = [a.pub, b.pub].sort(), now = Date.now();
     const isOften = !!result && q.recent.get(t.game, x, y, now - DAY_MS).n >= L.perPairPerDay;
     for (const p of [a, b]) q.add.run(t.game, p.pub, p.name);
-    if (before) for (const p of [a, b]) q.unfinished.run(-1, t.game, p.pub);
+    if (before) for (const pub of [before.a, before.b]) q.unfinished.run(-1, t.game, pub);   // whoever it was counted for
     q.save.run(ticket, t.game, x, y, result ? 1 : 0, now);
     if (!result) { for (const p of [a, b]) q.unfinished.run(1, t.game, p.pub); return { ok: true, finished: false, counted: true }; }
     if (isOften) return { ok: true, finished: true, counted: false };

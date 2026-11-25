@@ -66,6 +66,26 @@ test('an account has the points of all its devices, and cannot play itself', asy
   real.remove(account);
   assert.deepEqual(real.top('shikaku').map((p) => p.pub), [a.pub]);
 });
+test('an unfinished match is taken back from whoever it was counted for', async () => {
+  const [a, b] = await two(), account = 'cd'.repeat(32), whole = await played({ identities: [a, b] });
+  let mine = [a.pub];
+  const c = createLeaderboard({ file: ':memory:', library, owner: (pub) => (mine.includes(pub) ? account : pub) });
+  const send = (transcript) => c.submit({ transcript, ticket: TICKETS[0], key: KEY, pubs: [a.pub, b.pub] });
+  const { finished, counted } = await send({ ...whole, entries: whole.entries.slice(0, -1) });
+  assert.deepEqual([finished, counted], [false, true]);
+  mine = [];
+  assert.equal((await send(whole)).finished, true);
+  mine = [a.pub];
+  c.move({ from: a.pub, to: account });
+  assert.deepEqual(c.top('shikaku').map((p) => p.unfinished), [0, 0]);
+});
+test('two devices that become one person while the referee is busy count nothing', async () => {
+  const [a, b] = await two(), account = 'ef'.repeat(32), transcript = await played({ identities: [a, b] });
+  let mine = [];
+  const c = createLeaderboard({ file: ':memory:', library, owner: (pub) => (mine.includes(pub) ? account : pub), referee: async () => { mine = [a.pub, b.pub]; return { ok: true, result: { winner: 0 } }; } });
+  assert.match((await c.submit({ transcript, ticket: TICKETS[0], key: KEY, pubs: [a.pub, b.pub] })).error, /same person/);
+  assert.deepEqual(c.top('shikaku'), []);
+});
 test('where an account has points, its rating stays and a new device adds its numbers', async () => {
   const [a, b] = await two(), c = board(), transcript = await played({ identities: [a, b] });
   await c.submit({ transcript, ticket: TICKETS[0], key: KEY });
