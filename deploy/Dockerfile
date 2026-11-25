@@ -1,7 +1,7 @@
 # The match server only. Build from the top folder: docker build -f deploy/Dockerfile -t opengames-server .
 FROM node:26-alpine
 WORKDIR /srv
-RUN corepack enable 2>/dev/null || npm install -g pnpm@10
+RUN npm install -g pnpm@10.32.1
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 COPY LICENSE library.lock.json ./
