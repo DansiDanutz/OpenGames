@@ -71,7 +71,7 @@ async function takeAccount({ req, res, action, from, limits, accounts }) {
   const out = await accounts.ask(action, body, from.address);
   return reply(res, out.status, out.body);
 }
-/* Google sends the browser here. The ticket goes on in the fragment, which no server and no log ever sees. */
+/* Google sends the browser here. The ticket goes on in the fragment, which the browser sends to no server. It works once, for two minutes, for one device. */
 async function backFromGoogle({ res, url, from, limits, accounts }) {
   if (++from.accounts > limits.accountsPerMinute) return reply(res, 429, { error: 'too_many' });
   const ticket = await accounts.cameBack({ state: url.searchParams.get('state'), code: url.searchParams.get('code') })

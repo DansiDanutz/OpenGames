@@ -26,7 +26,7 @@ export function createGoogle({ id, secret, host, fetcher = fetch, clock = Date.n
       const claims = JSON.parse(Buffer.from(JSON.parse(text).id_token.split('.')[1], 'base64url').toString('utf8'));
       if (!ISSUERS.includes(claims.iss) || claims.aud !== id || claims.nonce !== nonce || !(claims.exp > clock() / 1000 - SKEW_S)) throw new Error('not an answer to this request');
       if (claims.email_verified !== true || typeof claims.email !== 'string') return null;
-      return /@gmail\.com$/i.test(claims.email) || (typeof claims.hd === 'string' && claims.hd) ? claims.email : null;
+      return /@gmail\.com$/i.test(claims.email) || (typeof claims.hd === 'string' && claims.email.toLowerCase().endsWith(`@${claims.hd.toLowerCase()}`)) ? claims.email : null;
     },
   };
 }

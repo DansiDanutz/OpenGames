@@ -73,7 +73,7 @@ test('answers that are not for this request are refused', async () => {
   await assert.rejects(setUp(fakeGoogle({}, 400)).back(await createIdentity()), /answered 400/);
 });
 test('only an address Google is in charge of counts', async () => {
-  for (const [change, ok] of [[{ email_verified: false }, false], [{ email_verified: 'true' }, false], [{ email: 'ann@example.org' }, false], [{ email: 'ann@example.org', hd: 'example.org' }, true], [{ email: 'x@evilgmail.com' }, false], [{ email: ['a@gmail.com'] }, false]]) {
+  for (const [change, ok] of [[{ email_verified: false }, false], [{ email_verified: 'true' }, false], [{ email: 'ann@example.org' }, false], [{ email: 'ann@example.org', hd: 'example.org' }, true], [{ email: 'ann@example.org', hd: 'other.example' }, false], [{ email: 'ann@example.org', hd: '' }, false], [{ email: 'x@evilgmail.com' }, false], [{ email: ['a@gmail.com'] }, false]]) {
     assert.equal(!!(await setUp(fakeGoogle(change)).back(await createIdentity())), ok, JSON.stringify(change));
   }
 });
@@ -96,4 +96,8 @@ test('over HTTP the browser comes back to the app, with the ticket where no serv
   const page = await (await get('/privacy')).text();
   assert.ok(page.includes('sign in with Google') && !page.includes('Resend'));
   await on.close();
+});
+test('one address can leave for Google only so often, without using up its email codes', async () => {
+  const s = setUp(fakeGoogle(), { mail: async () => {}, limits: { googlesPerHour: 2 } }), ann = await createIdentity();
+  assert.deepEqual([(await s.ask(ann, 'google')).status, (await s.ask(ann, 'google')).status, (await s.ask(ann, 'google')).status, (await s.ask(ann, 'start', { email: 'a@example.org' })).status], [200, 200, 429, 200]);
 });

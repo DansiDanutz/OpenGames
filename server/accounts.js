@@ -6,7 +6,7 @@ import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 import { cleanName, verified } from '../app/shell/session.js';
 
 const MINUTE = 60_000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
-const LIMITS = { codeMs: 10 * MINUTE, ticketMs: 2 * MINUTE, tries: 5, codesPerHour: 3, codesPerDay: 6, mailsPerDay: 90, waiting: 5000, startsPerHour: 6, signatures: 50_000, devices: 10, skewMs: 5 * MINUTE };
+const LIMITS = { codeMs: 10 * MINUTE, ticketMs: 2 * MINUTE, tries: 5, codesPerHour: 3, codesPerDay: 6, mailsPerDay: 90, waiting: 5000, startsPerHour: 6, googlesPerHour: 60, signatures: 50_000, devices: 10, skewMs: 5 * MINUTE };
 /* What a request may say, besides who, when and the signature. */
 const FIELDS = { start: ['email'], finish: ['email', 'code', 'name'], google: [], enter: ['ticket', 'name'], me: [], name: ['name'], leave: [], remove: [] };
 const PUB = /^[0-9a-f]{64}$/;
@@ -70,10 +70,10 @@ export function createAccounts({ file, mail = null, google = null, host, limits 
     return true;
   }
   /* Nobody starts signing in too often. */
-  function mayStart(address, now) {
-    const mine = (starts.get(address) ?? []).filter((t) => t > now - HOUR);
-    if (mine.length >= L.startsPerHour) return false;
-    starts.set(address, [...mine, now]);
+  function mayStart(who, most, now) {
+    const mine = (starts.get(who) ?? []).filter((t) => t > now - HOUR);
+    if (mine.length >= most) return false;
+    starts.set(who, [...mine, now]);
     return true;
   }
   function enter(pub, email, name, now) {
@@ -96,7 +96,7 @@ export function createAccounts({ file, mail = null, google = null, host, limits 
     async start(b, address) {
       const email = cleanEmail(b.email), now = clock();
       if (!email) return no('bad_email');
-      if (!mayStart(address, now)) return no('too_many', 429);
+      if (!mayStart(address, L.startsPerHour, now)) return no('too_many', 429);
       const times = sent.get(email) ?? [];
       if (times.filter((t) => t > now - HOUR).length >= L.codesPerHour || times.length >= L.codesPerDay) return no('too_many', 429);
       if (mails.length >= L.mailsPerDay || (codes.size >= L.waiting)) return no('busy', 503);
@@ -123,7 +123,8 @@ export function createAccounts({ file, mail = null, google = null, host, limits 
     },
     async google(b, address) {
       const now = clock();
-      if (!mayStart(address, now)) return no('too_many', 429);
+      // Many phones share an address, and this sends nothing to anybody.
+      if (!mayStart(`google ${address}`, L.googlesPerHour, now)) return no('too_many', 429);
       if (leaving.size >= L.waiting) return no('busy', 503);
       const { state, verifier, nonce, url } = google.begin();
       leaving.set(state, { pub: b.pub, verifier, nonce, until: now + L.codeMs });
@@ -167,6 +168,7 @@ export function createAccounts({ file, mail = null, google = null, host, limits 
     has: (action) => Object.hasOwn(actions, action) && (!Object.hasOwn(OF, action) || !!OF[action]),
     /* Back from Google, in a browser. Resolves to a ticket for the device that left, or null. */
     async cameBack({ state, code }) {
+      sweep(clock());
       const now = clock(), left = typeof state === 'string' ? leaving.get(state) : null;
       leaving.delete(state);
       if (!left || left.until <= now || typeof code !== 'string' || !code || code.length > 2048 || tickets.size >= L.waiting) return null;
