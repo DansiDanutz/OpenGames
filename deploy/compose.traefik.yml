@@ -17,6 +17,8 @@ services:
     sysctls: { net.core.somaxconn: 4096 }
     tmpfs: [/tmp]
     logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+    environment: { PLAY_DOMAIN: "${PLAY_DOMAIN:?set PLAY_DOMAIN}" }
+    env_file: [{ path: "${MAIL_ENV:-/dev/null}", required: false }]   # RESEND_API_KEY, MAIL_FROM, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, PRIVACY_CONTACT
     volumes: ["data:/data"]
     ports: ["3478:3478/udp"]        # STUN goes past the proxy; 4310 is for Traefik only
     networks: [edge]

@@ -19,8 +19,8 @@ export async function createIdentity() {
   const keys = await crypto.subtle.generateKey('Ed25519', false, ['sign', 'verify']);
   return { keys, pub: hex(await crypto.subtle.exportKey('raw', keys.publicKey)) };
 }
-const sign = async (identity, value) => hex(await crypto.subtle.sign('Ed25519', identity.keys.privateKey, enc.encode(canonical(value))));
-async function verified(pub, sig, value) {
+export const sign = async (identity, value) => hex(await crypto.subtle.sign('Ed25519', identity.keys.privateKey, enc.encode(canonical(value))));
+export async function verified(pub, sig, value) {
   if (!isHex(pub, 64) || !isHex(sig, 128)) return false;
   try {
     const key = await crypto.subtle.importKey('raw', unhex(pub), 'Ed25519', false, ['verify']);

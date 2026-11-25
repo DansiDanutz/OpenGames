@@ -2,10 +2,10 @@
 
 **No more middleman.** Open-source games for two players, who connect straight to each other. Or play alone against the computer, also without internet.
 
-Three games in 3D, with sound: Shikaku, Gemhold, and Avioane & Bărcuțe. There are no accounts and no payments. Nothing of value can be won; a place on a leaderboard is all there is.
+Three games in 3D, with sound: Shikaku, Gemhold, and Avioane & Bărcuțe. An account is optional and there are no payments. Nothing of value can be won; a place on a leaderboard is all there is.
 
 ## Play in a browser or on a phone
-The match server also serves the app at `/play`: the same games, against the same players. It can be installed on a phone or computer (**Install the app**; on an iPhone, Share and *Add to Home Screen*). There is nothing to sign in to: the player's name and key stay in that browser, so they are the same player next time. Another browser or a cleared one is a new player. An invite holds a link that opens the match, and it waits ten minutes even when the phone shows WhatsApp.
+The match server also serves the app at `/play`: the same games, against the same players. It can be installed on a phone or computer (**Install the app**; on an iPhone, Share and *Add to Home Screen*). Nobody has to sign in: the player's name and key stay in that browser, so they are the same player next time. Another browser or a cleared one is a new player, unless they sign in. An invite holds a link that opens the match, and it waits ten minutes even when the phone shows WhatsApp.
 
 A game runs in a sandboxed frame with an origin of its own and no network. The tests try to get out of it in Chrome and WebKit: other addresses, the window around it, frames of its own, WebRTC. One thing the rules of browsers leave open is a hint to look up or connect to an address (`dns-prefetch`, `preconnect`); reading every game before it is approved covers that. Firefox is not tested. An invite link only asks; nobody is connected before **Join**.
 
@@ -62,7 +62,10 @@ Or use `deploy/`: `PLAY_DOMAIN=play.example.org docker compose -f deploy/compose
 
 Node 26 or newer. Put a proxy with TLS in front of it, so players use `wss://`. `TRUST_PROXY` is the number of proxies in front; leave it at 0 without one, or anybody can pretend to be another address. `STUN_PORT` (UDP, not behind the proxy) lets players find a direct connection over the internet. Without `DATA_DIR` there are no leaderboards and no counts. Back up `leaderboard.db` and `stats.db`. `GET /health` answers when the server is up. On one computer, 3000 players sent 5,850 messages a second through the server with none lost (99% under 30 ms, 95 MB of memory).
 
-The server also has public pages without scripts: `/` (the games), `/games/<id>` (a page to share), `/creators` (how to start) and `/creators/<author>` (a dashboard with matches per day). It keeps one number per game and day, nothing about players. A match counts when two players at different addresses stay for a minute, at most 20 a day per address and game; play against the computer is never counted.
+The server also has public pages without scripts: `/` (the games), `/games/<id>` (a page to share), `/creators` (how to start) and `/creators/<author>` (a dashboard with matches per day). For play it keeps one number per game and day, nothing about players. A match counts when two players at different addresses stay for a minute, at most 20 a day per address and game; play against the computer is never counted.
+
+## Sign-in
+Optional, with Google or with an email code; each is offered only when it is set up. With Google the page leaves for Google and comes back (no script of Google runs here); only addresses Google itself is in charge of count, and only the device that left can use what comes back. The Mac and Windows apps offer the email code only. With a code the player types an email address and the six digits sent to it. The device then stays signed in, and all devices of an account share a name and points. There are no passwords or cookies: every request is signed with the device's own key. The server keeps the address, the name and the public keys of the devices, until the player deletes the account. It is off unless `PRIVACY_CONTACT` and `PLAY_DOMAIN` are set, with `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (redirect address `https://<PLAY_DOMAIN>/account/google`), or `RESEND_API_KEY` and `MAIL_FROM`, or both; then `/privacy` is shown too, which the operator has to read and answer for. Back up `accounts.db` and keep it private. A server sends at most 90 codes a day, so many requests can use them up. With `deploy/compose.traefik.yml`, put these settings in a file only you can read and set `MAIL_ENV` to its path.
 
 ## Build the app
 ```sh

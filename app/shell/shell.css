@@ -59,7 +59,8 @@ body[data-screen=match] .top{display:none}
 @media (max-width:640px){#library{padding:24px 16px 40px}.games li{grid-template:"art about" auto "actions actions" auto "ranks ranks" auto/72px minmax(0,1fr);gap:10px 14px;padding:14px;border-radius:20px}.art{width:72px;height:72px;border-radius:14px}.about{align-self:center}.games h3{font-size:24px}.games p{margin-top:2px;font-size:14px;line-height:1.35}.games .facts,.lead{display:none}#library>section{margin-bottom:20px}.ranks{min-height:44px;border:0;padding:0}.top{flex-wrap:nowrap;gap:8px;padding:8px 12px}.mark{font-size:18px}.right{flex-wrap:nowrap;gap:8px}.name label{position:absolute;opacity:0;pointer-events:none}.name input{width:128px}.right button{padding:8px 10px;font-size:14px}}
 @media (prefers-reduced-motion:reduce){.thread path{animation:none}}
 .right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-#room,#invited,#terms,#board{overflow:auto;padding:36px 24px 48px}
+#signin form{display:grid;gap:10px;max-width:360px;margin:18px 0}#signin input{min-height:44px;padding:8px 12px;background:var(--felt);border:1px solid var(--line);border-radius:12px}#signinNote{min-height:1.5em;margin:10px 0}
+#room,#invited,#terms,#board,#signin{overflow:auto;padding:36px 24px 48px}
 .sheet{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
 .sheet.wide{max-width:760px}
 .sheet h1{font:800 clamp(32px,5vw,50px)/1.05 var(--display);outline:none}
@@ -89,7 +90,7 @@ ol.rules{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px;m
 #score{display:block;text-align:center;font:800 24px/1 var(--display);color:var(--ink)}
 #score:empty{display:none}
 .status .small{flex:1;text-align:center}
-@media (max-width:640px){#room,#invited,#terms,#board{padding:16px 16px 32px}.status{flex-wrap:wrap}.bar,.status{display:contents}.status .small{display:none}#match:not([hidden]){display:grid;grid-template:auto auto minmax(0,1fr)/minmax(0,1fr) auto minmax(0,1fr) auto;align-items:center;column-gap:8px}#match>.bar>.p0{padding-left:12px}.player{font-size:16px}.between span{padding:0 4px;font-size:12px}#score{font-size:20px}#leave{grid-area:1/4;min-height:44px;max-width:92px;margin:4px 8px 4px 0;padding:4px 10px;font-size:14px;line-height:1.15}#status{grid-area:2/1/auto/-1;padding:0 12px 6px;font-size:15px}#status.calm{display:none}#stage{grid-area:3/1/auto/-1;align-self:stretch;border-top:1px solid var(--line)}#boardTable th,#boardTable td{padding:8px 4px}}
+@media (max-width:640px){#room,#invited,#terms,#board,#signin{padding:16px 16px 32px}.status{flex-wrap:wrap}.bar,.status{display:contents}.status .small{display:none}#match:not([hidden]){display:grid;grid-template:auto auto minmax(0,1fr)/minmax(0,1fr) auto minmax(0,1fr) auto;align-items:center;column-gap:8px}#match>.bar>.p0{padding-left:12px}.player{font-size:16px}.between span{padding:0 4px;font-size:12px}#score{font-size:20px}#leave{grid-area:1/4;min-height:44px;max-width:92px;margin:4px 8px 4px 0;padding:4px 10px;font-size:14px;line-height:1.15}#status{grid-area:2/1/auto/-1;padding:0 12px 6px;font-size:15px}#status.calm{display:none}#stage{grid-area:3/1/auto/-1;align-self:stretch;border-top:1px solid var(--line)}#boardTable th,#boardTable td{padding:8px 4px}}
 button.link{min-height:44px;max-width:100%;overflow-wrap:anywhere;line-height:1.3;padding:4px 0;border:0;border-radius:6px;color:var(--go);text-decoration:underline;text-underline-offset:3px;text-align:left}
 .games .sponsor{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;max-width:none;font-size:14px}.sponsor span{padding:1px 8px;border:1px solid var(--line);border-radius:99px}.sponsor .link{color:var(--ink)}
 .here{display:flex;align-items:center;gap:18px}.here p{margin-top:6px;color:var(--soft)}.here .art{flex:none}
