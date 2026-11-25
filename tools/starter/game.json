@@ -1,0 +1,17 @@
+{
+  "id": "starter",
+  "name": "Starter",
+  "version": "1.0.0",
+  "author": "you",
+  "license": "MIT",
+  "summary": "Take turns claiming cells. A new cell may not touch your own ground by a side.",
+  "players": { "min": 2, "max": 2 },
+  "minutes": 3,
+  "page": "index.html",
+  "icon": "icon.svg",
+  "rules": "rules.js",
+  "options": [
+    { "id": "size", "label": "Board", "default": "5", "choices": [{ "id": "5", "label": "5 × 5" }, { "id": "7", "label": "7 × 7" }] }
+  ],
+  "howto": ["Take turns claiming an empty cell. Nobody may claim a rock.", "Your new cell may not touch your own ground by a side.", "Who cannot claim a cell loses."]
+}

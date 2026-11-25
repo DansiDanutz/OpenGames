@@ -1,0 +1,8 @@
+@import "/kit/table.css";
+#cells{display:grid;gap:6px;width:min(94vw,70vh);margin:auto}
+#cells.n5{grid-template-columns:repeat(5,1fr)}#cells.n7{grid-template-columns:repeat(7,1fr)}
+#cells button{min-height:0;aspect-ratio:1;padding:0}
+#cells button.p0{background:#ff9d00}#cells button.p1{background:#19d3ad;border-radius:50%}
+#cells button.p2{background:#5d5670;border-radius:34%}
+#cells button[aria-disabled=false]{border-color:var(--gold)}
+#say{align-self:center}
