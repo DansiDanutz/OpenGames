@@ -8,12 +8,13 @@
 </head>
 <body class="place">
 <p id="whose">Hide your fleet</p>
-<div class="boards">
+<div class="sides" id="sides" role="group" aria-label="Which board"><button id="seeTheirs" type="button">Their sea</button><button id="seeMine" type="button">Your fleet</button></div>
+<div class="boards" id="seas"><div class="cards" id="cards">
   <section class="big" id="their"><h2 id="theirTitle">Other player</h2>
     <div class="board" id="theirs" role="application" tabindex="0" aria-label="The other player's board. Move with the arrow keys and press Space to shoot."></div></section>
-  <section class="small"><h2 id="mineTitle">Your fleet</h2>
+  <section class="small" id="my"><h2 id="mineTitle">Your fleet</h2>
     <div class="board" id="mine" role="application" tabindex="0" aria-label="Your board. Press N for the next piece, the arrow keys to move it and R to turn it."></div></section>
-</div>
+</div></div>
 <ul class="left" id="left" aria-label="Their fleet"></ul>
 <div class="tools" id="tools"><button id="mix" type="button">Shuffle</button><button id="turn" type="button">Turn</button><button id="go" class="main" type="button">Ready</button></div>
 <p id="say" role="status"></p>

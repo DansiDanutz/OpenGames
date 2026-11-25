@@ -17,6 +17,8 @@ const TEXT = {
 const SCREENS = ['library', 'setup', 'terms', 'board', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000;
 let server = '', stun = null, library = [], current = null;      // current: { game, meeting, session, table, over }
 
+/* While nothing happens a phone leaves the line out. */
+function say(text) { $('status').textContent = text; $('status').classList.toggle('calm', text === 'Playing'); }
 function screen(name) {
   document.body.dataset.screen = name;
   for (const id of SCREENS) $(id).hidden = id !== name;
@@ -171,7 +173,7 @@ async function openTable(mine, mode, still) {
   mine.table = createTable({ send: (msg) => desk.toGame(mine.token, msg) });
   screen('match');
   $('mode').textContent = mode;
-  $('status').textContent = 'Starting the game';
+  say('Starting the game');
   $('leave').textContent = 'Leave';
   for (const id of ['p0', 'p1', 'score', 'rules']) $(id).textContent = '';
   await desk.openGame(mine.game.id, mine.token);
@@ -189,7 +191,7 @@ const during = (mine, still) => ({
     mine.ranked = agreed.ranked; mine.rounds = agreed.rounds; mine.seat = seat; mine.heard = Date.now();
     drawScore(mine, [0, 0]);
     players.forEach((p, i) => { $(`p${i}`).textContent = `${p.name}${i === seat ? ' (you)' : ''}`; });
-    $('status').textContent = 'Playing';
+    say('Playing');
     $('leave').textContent = 'Give up';
     mine.started = true;
   },
@@ -218,7 +220,7 @@ async function play(mine, met, still) {
   if (!still()) { wire.close(); return; }
   if (!(await openTable(mine, wire.mode === 'direct' ? 'Direct connection' : 'Through the server', still))) return;
   const terms = { ...mine.terms, ranked: !!mine.terms.ranked && !!met.ticket };
-  if (met.host) $('status').textContent = 'Waiting for the other player to accept your rules';
+  if (met.host) say('Waiting for the other player to accept your rules');
   mine.session = new Session({ wire, terms, ticket: met.ticket, theirPub: met.theirPub, sound: settings.sound, table: mine.table, identity: me, host: met.host, game: mine.game, name: settings.name || 'Player', on: {
     terms: (offer) => review(mine, offer),
     ...during(mine, still),
@@ -243,7 +245,7 @@ function finish(mine, result, seat, transcript) {
   const outcome = result.winner === null ? 'draws' : result.winner === seat ? 'wins' : 'losses';
   addResult(mine.solo ? soloKey(mine.game.id) : mine.game.id, outcome);
   const words = { draws: 'It is a draw.', wins: result.reason === 'resigned' ? 'You win. The other player gave up.' : 'You win.', losses: result.reason === 'resigned' ? 'You gave up.' : 'You lose.' };
-  $('status').textContent = words[outcome];
+  say(words[outcome]);
   drawScore(mine, result.score);
   report(mine, transcript);
   $('leave').textContent = 'Back to games';
@@ -252,7 +254,7 @@ function finish(mine, result, seat, transcript) {
 /* A lost match stays on the screen, so the player can read why. It does not count. */
 function stop(mine, reason) {
   mine.over = true;
-  $('status').textContent = `${reason} This match does not count.`;
+  say(`${reason} This match does not count.`);
   $('leave').textContent = 'Back to games';
 }
 async function placeGame() {
