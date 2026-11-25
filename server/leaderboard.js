@@ -32,6 +32,7 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     CREATE TABLE IF NOT EXISTS players (game TEXT, pub TEXT, name TEXT NOT NULL, rating INTEGER NOT NULL DEFAULT ${START}, wins INTEGER NOT NULL DEFAULT 0,
       losses INTEGER NOT NULL DEFAULT 0, draws INTEGER NOT NULL DEFAULT 0, unfinished INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (game, pub)) STRICT;
     CREATE TABLE IF NOT EXISTS matches (ticket TEXT PRIMARY KEY, game TEXT NOT NULL, a TEXT NOT NULL, b TEXT NOT NULL, finished INTEGER NOT NULL, at INTEGER NOT NULL) STRICT;
+    PRAGMA secure_delete = ON;
     CREATE INDEX IF NOT EXISTS matches_pair ON matches (game, a, b, at);`);
   const q = {
     add: db.prepare('INSERT INTO players (game, pub, name) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET name = excluded.name'),
@@ -42,6 +43,10 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     save: db.prepare('INSERT INTO matches (ticket, game, a, b, finished, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ticket) DO UPDATE SET finished = excluded.finished, at = excluded.at'),
     recent: db.prepare('SELECT count(*) AS n FROM matches WHERE game = ? AND a = ? AND b = ? AND finished = 1 AND at > ?'),
     move: db.prepare('UPDATE players SET pub = ? WHERE pub = ? AND game NOT IN (SELECT game FROM players WHERE pub = ?)'),
+    rows: db.prepare('SELECT game, wins, losses, draws, unfinished FROM players WHERE pub = ?'),
+    merge: db.prepare('UPDATE players SET wins = wins + ?, losses = losses + ?, draws = draws + ?, unfinished = unfinished + ? WHERE game = ? AND pub = ?'),
+    matchesOf: db.prepare('SELECT ticket, a, b FROM matches WHERE a = ? OR b = ?'),
+    rewrite: db.prepare('UPDATE matches SET a = ?, b = ? WHERE ticket = ?'),
     forget: db.prepare('DELETE FROM players WHERE pub = ?'),
     forgetA: db.prepare("UPDATE matches SET a = '' WHERE a = ?"),
     forgetB: db.prepare("UPDATE matches SET b = '' WHERE b = ?"),
@@ -104,13 +109,30 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
       return out;
     },
     top: (game) => q.top.all(game, L.newPlayer, L.minFinished, L.top).map((p) => ({ ...p })),
-    /* A device that signs in brings its points where the account has none yet. */
-    move({ from, to }) { q.move.run(to, from, to); },
+    /* A device that signs in brings its points. Where the account already has some, its rating stays and the numbers are added. */
+    move({ from, to }) {
+      if (from === to) return;
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        q.move.run(to, from, to);
+        for (const r of q.rows.all(from)) q.merge.run(r.wins, r.losses, r.draws, r.unfinished, r.game, to);
+        q.forget.run(from);
+        for (const m of q.matchesOf.all(from, from)) {
+          const [x, y] = [m.a, m.b].map((p) => (p === from ? to : p)).sort();
+          q.rewrite.run(x, y, m.ticket);
+        }
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+    },
     /* Removes a person. The other players keep their results. */
     remove(id) {
       q.forget.run(id);
       q.forgetA.run(id);
       q.forgetB.run(id);
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     },
     players: (game) => q.players.get(game).n,
     close: () => db.close(),

@@ -45,7 +45,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   const addressOf = (req) => addressKey((proxies > 0 && String(req.headers['x-forwarded-for'] || '').split(',').at(-proxies)?.trim()) || req.socket.remoteAddress);
   const seen = (address) => {
     const now = Date.now(), old = addresses.get(address);
-    const a = old ?? { count: 0, invites: 0, opens: 0, tries: 0, results: 0, reads: 0, pages: 0, accounts: 0, finds: 0, since: now };
+    const a = old ?? { address, count: 0, invites: 0, opens: 0, tries: 0, results: 0, reads: 0, pages: 0, accounts: 0, finds: 0, since: now };
     if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, results: 0, reads: 0, pages: 0, accounts: 0, finds: 0, since: now });
     addresses.set(address, a);
     return a;

@@ -64,7 +64,7 @@ async function takeAccount({ req, res, action, from, limits, accounts }) {
   if (text === null) return reply(res, 413, { error: 'too_large' });
   let body;
   try { body = JSON.parse(text); } catch { return reply(res, 400, { error: 'bad_request' }); }
-  const out = await accounts.ask(action, body);
+  const out = await accounts.ask(action, body, from.address);
   return reply(res, out.status, out.body);
 }
 export function answerHttp(context) {

@@ -10,6 +10,7 @@ const TEXT = {
   not_sent: 'The code could not be sent. Please try again later.',
   not_signed: 'The clock of this device seems wrong. Set it and try again.',
 };
+const ours = (text) => Object.assign(new Error(text), { isOurs: true });
 const $ = (id) => document.getElementById(id);
 
 /* desk.account(action, body) -> { ok, body }. changed(): the name or the account is another one. */
@@ -18,7 +19,8 @@ export function createAccount({ desk, host, changed, close }) {
   async function ask(action, extra = {}) {
     const me = await identity(), said = { ...extra, pub: me.pub, at: Date.now() };
     const { ok, body } = await desk.account(action, { ...said, sig: await sign(me, { opengames: 'account', host, action, ...said }) });
-    if (!ok) throw new Error(TEXT[body?.error] ?? 'That did not work. Please try again.');
+    if (body?.error === 'not_signed_in') { keep({ signedIn: false }); throw ours('This device is not signed in any more.'); }
+    if (!ok) throw ours(TEXT[body?.error] ?? 'That did not work. Please try again.');
     return body;
   }
   function keep(answer) {
@@ -39,7 +41,7 @@ export function createAccount({ desk, host, changed, close }) {
     if (isBusy) return;
     isBusy = true;
     $('signinNote').textContent = '';
-    try { await fn(); } catch (error) { $('signinNote').textContent = error.message.includes('fetch') ? 'The server cannot be reached.' : error.message; } finally { isBusy = false; }
+    try { await fn(); } catch (error) { $('signinNote').textContent = error.isOurs ? error.message : 'The server cannot be reached. Please try again.'; } finally { isBusy = false; }
   };
   $('step-email').onsubmit = run(async () => {
     email = $('emailInput').value.trim().toLowerCase();

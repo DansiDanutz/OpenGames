@@ -6,10 +6,12 @@ import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 import { cleanName, verified } from '../app/shell/session.js';
 
 const MINUTE = 60_000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
-const LIMITS = { codeMs: 10 * MINUTE, tries: 5, codesPerHour: 3, codesPerDay: 6, mailsPerDay: 90, waiting: 5000, devices: 10, skewMs: 5 * MINUTE };
+const LIMITS = { codeMs: 10 * MINUTE, tries: 5, codesPerHour: 3, codesPerDay: 6, mailsPerDay: 90, waiting: 5000, startsPerHour: 6, signatures: 50_000, devices: 10, skewMs: 5 * MINUTE };
+/* What a request may say, besides who, when and the signature. */
+const FIELDS = { start: ['email'], finish: ['email', 'code', 'name'], me: [], name: ['name'], leave: [], remove: [] };
 const PUB = /^[0-9a-f]{64}$/;
 /* Simple addresses only: no display names, quotes, spaces or lists. */
-const EMAIL = /^[a-z0-9._%+-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
+const EMAIL = /^[a-z0-9._+-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
 export const cleanEmail = (v) => {
   const email = typeof v === 'string' && v.length <= 200 ? v.trim().toLowerCase() : '';
   return EMAIL.test(email) ? email : null;
@@ -36,6 +38,8 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
   };
   const secret = randomBytes(32);
   const codes = new Map();                             // email and device -> { mac, until, tries }
+  const used = new Map();                              // signature -> when it may be forgotten
+  const starts = new Map();                            // internet address -> times of the last hour, in memory only
   const sent = new Map();                              // email -> times; kept in memory for a day
   let mails = [];
   const macOf = (email, pub, code) => createHmac('sha256', secret).update(`${email}\0${pub}\0${code}`).digest();
@@ -45,25 +49,32 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
   const view = (a) => ({ signedIn: true, id: a.id, email: a.email, name: a.name });
 
   function sweep(now) {
+    for (const [sig, until] of used) { if (until > now) break; used.delete(sig); }   // oldest first
     for (const [key, c] of codes) if (c.until <= now) codes.delete(key);
     for (const [email, times] of sent) {
       const recent = times.filter((t) => t > now - DAY);
       if (recent.length) sent.set(email, recent); else sent.delete(email);
     }
+    for (const [address, times] of starts) if (times.at(-1) <= now - HOUR) starts.delete(address);
     mails = mails.filter((t) => t > now - DAY);
   }
   /* The device signs what it asks for, for this server and this moment. */
   async function isSigned(action, b) {
-    if (typeof b.at !== 'number' || Math.abs(clock() - b.at) > L.skewMs) return false;
     const { sig, ...said } = b;
-    return verified(b.pub, sig, { opengames: 'account', host: host(), action, ...said });
+    if (typeof b.at !== 'number' || Math.abs(clock() - b.at) > L.skewMs || typeof sig !== 'string' || used.has(sig)) return false;
+    // What this server decides comes last, and nothing else may be in the request, so nothing can be put in its place.
+    if (!(await verified(b.pub, sig, { ...said, opengames: 'account', host: host(), action })) || used.has(sig)) return false;
+    used.set(sig, clock() + 2 * L.skewMs);               // a request works once
+    return true;
   }
   const actions = {
     /* The answer is the same whether the address is known or not. */
-    async start(b) {
+    async start(b, address) {
       const email = cleanEmail(b.email), now = clock();
       if (!email) return no('bad_email');
-      sweep(now);
+      const mine = (starts.get(address) ?? []).filter((t) => t > now - HOUR);
+      if (mine.length >= L.startsPerHour) return no('too_many', 429);
+      starts.set(address, [...mine, now]);
       const times = sent.get(email) ?? [];
       if (times.filter((t) => t > now - HOUR).length >= L.codesPerHour || times.length >= L.codesPerDay) return no('too_many', 429);
       if (mails.length >= L.mailsPerDay || (codes.size >= L.waiting)) return no('busy', 503);
@@ -73,7 +84,9 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
       codes.set(keyOf(email, b.pub), { mac: macOf(email, b.pub, code), until: now + L.codeMs, tries: 0 });
       try { await mail({ to: email, code }); } catch (error) {
         console.error('A code was not sent:', error.message);
-        codes.delete(keyOf(email, b.pub));
+        codes.delete(keyOf(email, b.pub));               // nothing was sent, so it does not count
+        sent.set(email, (sent.get(email) ?? []).filter((t) => t !== now));
+        mails = mails.filter((t) => t !== now);
         return no('not_sent', 502);
       }
       return yes({ sent: true });
@@ -117,6 +130,7 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
       const a = q.byPub.get(b.pub);
       if (!a) return no('not_signed_in', 401);
       q.remove.run(a.id);
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE)');        // so that no old copy of the address stays in the log
       sent.delete(a.email);
       removed(a.id);
       return yes({ signedIn: false });
@@ -124,10 +138,13 @@ export function createAccounts({ file, mail, host, limits = {}, clock = Date.now
   };
   return {
     has: (action) => Object.hasOwn(actions, action),
-    async ask(action, body) {
+    async ask(action, body, address = '') {
       if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.pub !== 'string' || !PUB.test(body.pub)) return no('bad_request');
+      if (!Object.keys(body).every((k) => ['pub', 'at', 'sig', ...FIELDS[action]].includes(k))) return no('bad_request');
+      sweep(clock());
+      if (used.size >= L.signatures) return no('busy', 503);
       if (!(await isSigned(action, body))) return no('not_signed', 401);
-      return actions[action](body);
+      return actions[action](body, address);
     },
     /* Who plays with this key: the account, or the device itself. */
     owner: (pub) => q.byPub.get(pub)?.id ?? pub,

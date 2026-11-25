@@ -66,11 +66,11 @@ test('an account has the points of all its devices, and cannot play itself', asy
   real.remove(account);
   assert.deepEqual(real.top('shikaku').map((p) => p.pub), [a.pub]);
 });
-test('points an account already has are not replaced', async () => {
+test('where an account has points, its rating stays and a new device adds its numbers', async () => {
   const [a, b] = await two(), c = board(), transcript = await played({ identities: [a, b] });
   await c.submit({ transcript, ticket: TICKETS[0], key: KEY });
   c.move({ from: a.pub, to: b.pub });
-  assert.equal(c.top('shikaku').length, 2);
+  assert.deepEqual(c.top('shikaku').map((p) => [p.pub === b.pub, p.rating, p.wins, p.losses]), [[true, 1216, 1, 1]]);
 });
 test('a changed match is refused by the referee', async () => {
   const b = board(), transcript = await played({ identities: await two() });

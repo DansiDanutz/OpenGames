@@ -16,6 +16,7 @@ function setUp(extra = {}) {
   let now = NOW;
   const accounts = createAccounts({ file: ':memory:', host: () => HOST, clock: () => now, mail: async (m) => { box.push(m); }, moved: (m) => log.push(m), removed: (id) => log.push({ removed: id }), ...extra });
   const ask = async (who, action, body = {}, change = {}) => {
+    now += 1;                                            // no two requests are the same
     const said = { ...body, pub: who.pub, at: now };
     return accounts.ask(action, { ...said, sig: await sign(who, { opengames: 'account', host: HOST, action, ...said }), ...change });
   };
@@ -23,7 +24,7 @@ function setUp(extra = {}) {
     await ask(who, 'start', { email });
     return ask(who, 'finish', { email, code: box.at(-1).code, name });
   };
-  return { accounts, ask, enter, box, log, wait: (ms) => { now += ms; } };
+  return { accounts, ask, enter, box, log, wait: (ms) => { now += ms; }, now: () => now };
 }
 test('a code signs a device in, and the device stays signed in', async () => {
   const s = setUp(), ann = await createIdentity();
@@ -68,7 +69,7 @@ test('somebody else asking for a code does not spoil mine', async () => {
   assert.equal((await s.ask(a, 'finish', { email, code: s.box[0].code })).status, 200);
 });
 test('an address and the whole server only get so many mails', async () => {
-  const s = setUp({ limits: { mailsPerDay: 5 } }), a = await createIdentity(), email = 'ann@example.org';
+  const s = setUp({ limits: { mailsPerDay: 5, startsPerHour: 99 } }), a = await createIdentity(), email = 'ann@example.org';
   for (let i = 0; i < 3; i++) assert.equal((await s.ask(a, 'start', { email })).status, 200);
   assert.equal((await s.ask(a, 'start', { email })).status, 429);
   s.wait(61 * 60 * 1000);
@@ -86,10 +87,29 @@ test('a mail that cannot be sent is said, and its code is gone', async (t) => {
 test('only the device itself, here and now, can ask', async () => {
   const s = setUp(), [a, b] = [await createIdentity(), await createIdentity()];
   await s.enter(a);
-  for (const change of [{ sig: 'f'.repeat(128) }, { sig: undefined }, { at: NOW - 60 * 60 * 1000 }, { at: 'now' }, { pub: b.pub }, { name: 'added' }]) assert.equal((await s.ask(a, 'me', {}, change)).status, 401, JSON.stringify(change));
+  for (const change of [{ sig: 'f'.repeat(128) }, { sig: undefined }, { at: NOW - 60 * 60 * 1000 }, { at: 'now' }, { pub: b.pub }, { name: 'added' }]) assert.ok([400, 401].includes((await s.ask(a, 'me', {}, change)).status), JSON.stringify(change));
   const said = { pub: a.pub, at: NOW };
   for (const part of [{ host: 'evil.example' }, { action: 'leave' }, { opengames: 'match' }]) assert.equal((await s.accounts.ask('me', { ...said, sig: await sign(a, { opengames: 'account', host: HOST, action: 'me', ...said, ...part }) })).status, 401);
   for (const bad of [null, [], 'x', {}, { pub: [a.pub] }, { pub: 'x' }]) assert.equal((await s.accounts.ask('me', bad)).status, 400);
+});
+test('a signed request does only what was signed, only here, and once', async () => {
+  const s = setUp(), a = await createIdentity();
+  await s.enter(a);
+  const said = { pub: a.pub, at: NOW }, body = async (extra = {}) => ({ ...said, sig: await sign(a, { opengames: 'account', host: HOST, action: 'me', ...said, ...extra }) });
+  for (const action of ['remove', 'leave']) {
+    for (const put of [{}, { action: 'me' }, { action: 'me', host: HOST }, { opengames: 'account' }]) assert.notEqual((await s.accounts.ask(action, { ...(await body()), ...put })).status, 200);
+    assert.notEqual((await s.accounts.ask(action, { ...(await body({ host: 'evil.example' })), action: 'me', host: 'evil.example' })).status, 200);
+  }
+  const once = await body();
+  assert.equal((await s.accounts.ask('me', once)).body.signedIn, true);
+  assert.equal((await s.accounts.ask('me', once)).status, 401);
+  const [x, y] = await Promise.all([1, 2].map(async () => { const b = { ...said, at: NOW + 1 }; return s.accounts.ask('me', { ...b, sig: await sign(a, { opengames: 'account', host: HOST, action: 'me', ...b }) }); }));
+  assert.deepEqual([x.status, y.status].sort(), [200, 401]);
+});
+test('one address can only ask for a few codes an hour', async () => {
+  const s = setUp({ limits: { startsPerHour: 2 } }), a = await createIdentity();
+  const start = async (email, address) => { s.wait(1); const said = { email, pub: a.pub, at: s.now() }; return s.accounts.ask('start', { ...said, sig: await sign(a, { opengames: 'account', host: HOST, action: 'start', ...said }) }, address); };
+  assert.deepEqual([(await start('a@x.org', '1')).status, (await start('b@x.org', '1')).status, (await start('c@x.org', '1')).status, (await start('c@x.org', '2')).status], [200, 200, 429, 200]);
 });
 test('signing out, renaming and deleting', async () => {
   const s = setUp(), [a, b] = [await createIdentity(), await createIdentity()];
@@ -107,7 +127,7 @@ test('signing out, renaming and deleting', async () => {
   assert.notEqual((await s.enter(a)).body.id, id);
 });
 test('an account has a limited number of devices, the newest', async () => {
-  const s = setUp({ limits: { devices: 2, codesPerHour: 9, codesPerDay: 9 } }), all = [];
+  const s = setUp({ limits: { startsPerHour: 99, devices: 2, codesPerHour: 9, codesPerDay: 9 } }), all = [];
   for (let i = 0; i < 3; i++) { all.push(await createIdentity()); await s.enter(all[i]); s.wait(1000); }
   assert.deepEqual(await Promise.all(all.map(async (d) => (await s.ask(d, 'me')).body.signedIn)), [false, true, true]);
 });
@@ -119,8 +139,8 @@ test('a deleted address is gone from the disk', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'og-acc-')), s = setUp({ file: path.join(dir, 'a.db') }), a = await createIdentity();
   await s.enter(a, 'verysecret@example.org');
   await s.ask(a, 'remove');
-  s.accounts.close();
   for (const f of fs.readdirSync(dir)) assert.doesNotMatch(fs.readFileSync(path.join(dir, f), 'latin1'), /verysecret/);
+  s.accounts.close();
   fs.rmSync(dir, { recursive: true });
 });
 test('the mail has the code and nothing of the key is shown when it fails', async () => {
