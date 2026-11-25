@@ -18,7 +18,7 @@ pnpm demo        # a match server and two windows on one computer
 4. Every move is signed by its player and checked by the game's rules on both computers. The order of moves is a signed chain, so a finished match can be replayed by a referee.
 
 ## Make a game
-A game is a folder with `game.json`, `rules.js` and a page. Copy `games/shikaku` to start. Games are two-player only.
+A game is a folder with `game.json`, `rules.js`, an icon and a page. Copy `games/shikaku` to start. Games are two-player only.
 
 `rules.js` exports `setup`, `move`, `result`, `bot` and optionally `view`. Rules must give the same answer on every computer: no time, no random numbers of their own, no imports. See `kit/engine.js`.
 

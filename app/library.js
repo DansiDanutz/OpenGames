@@ -47,6 +47,7 @@ export function readManifest(dir) {
     [m.players?.min === 2 && m.players?.max === 2, 'every game must be for two players'],
     [Number.isInteger(m.minutes) && m.minutes > 0 && m.minutes <= 240, 'minutes must be a whole number'],
     [/^[\w-]+\.html$/.test(m.page ?? '') && fs.existsSync(path.join(dir, m.page)), 'page is missing'],
+    [/^[\w-]+\.(svg|png|webp)$/.test(m.icon ?? '') && fs.existsSync(path.join(dir, m.icon)), 'icon is missing (svg, png or webp)'],
     [/^[\w-]+\.js$/.test(m.rules ?? '') && fs.existsSync(path.join(dir, m.rules)), 'rules is missing'],
   ].filter(([ok]) => !ok).map(([, problem]) => problem);
   if (problems.length) throw new Error(problems.join('; '));
@@ -58,9 +59,9 @@ export function readLibrary(root, kit) {
   return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((e) => {
     const dir = path.join(root, e.name);
     try {
-      const { id, name, version, author, license, summary, minutes, page } = readManifest(dir);
+      const { id, name, version, author, license, summary, minutes, page, icon } = readManifest(dir);
       if (id !== e.name) throw new Error('the folder must have the same name as the id');
-      return [{ id, name, version, author, license, summary, minutes, page, hash: sha256(`${hashGame(dir)}|${shared}`), dir }];
+      return [{ id, name, version, author, license, summary, minutes, page, icon, hash: sha256(`${hashGame(dir)}|${shared}`), dir }];
     } catch (error) {
       console.error(`The game in ${e.name} was left out: ${error.message}`);
       return [];

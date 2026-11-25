@@ -99,6 +99,7 @@ async function invite(a, b) {
 
 try {
   const [ann, bob] = [await open('Ann'), await open('Bob')];
+  assert.ok(await ann.page.evaluate(() => [...document.querySelectorAll('.art')].every((i) => i.complete && i.naturalWidth)), 'the game pictures load');
   await shot(ann, 'library');
 
   await invite(ann, bob);
@@ -107,7 +108,8 @@ try {
   assert.equal(await ann.page.textContent('#p0'), 'Ann (you)');
   assert.equal(await bob.page.textContent('#p0'), 'Ann');
   const rects = await solve(bob);
-  await inGame(bob, drag(rects.slice(0, 3)));
+  await inGame(bob, drag([...rects.slice(0, 3), { r0: 5, c0: 4, r1: 5, c1: 5 }].filter((x, i, all) => i < 3 || !all.slice(0, 3).some((y) => y.r1 >= 5 && y.c1 >= 4))));
+  await bob.page.waitForTimeout(350);
   await ann.page.waitForTimeout(400);
   assert.ok(await inGame(ann, "document.getElementById('theirs').value") > 0, 'the other player sees the progress');
   await shot(bob, 'match');
@@ -144,6 +146,7 @@ try {
 
   await inGame(bob, drag(rects.slice(3)));
   await Promise.all([status(bob, /^You win\.$/), status(ann, /^You lose\.$/)]);
+  await bob.page.waitForTimeout(400);
   await shot(bob, 'won');
   for (const p of [ann, bob]) await p.page.click('#leave');
   await bob.page.waitForSelector('text=You won 1 and lost 0');

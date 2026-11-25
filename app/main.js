@@ -31,6 +31,8 @@ const kitFile = (p) => resolveFile(path.join(ROOT, 'kit'), p.slice('/kit/'.lengt
 function serveShell(request) {
   const { host, pathname } = new URL(request.url);
   if (host !== 'platform') return answer(null);
+  const game = pathname.startsWith('/icons/') && games.find((g) => g.id === pathname.slice('/icons/'.length));
+  if (game) return answer(resolveFile(game.dir, game.icon), GAME_CSP);
   if (pathname.startsWith('/kit/')) return answer(kitFile(pathname), SHELL_CSP);
   if (pathname.startsWith('/app/shell/')) return answer(resolveFile(path.join(ROOT, 'app/shell'), pathname.slice('/app/shell/'.length)), SHELL_CSP);
   return answer(null);
@@ -107,7 +109,7 @@ const shellCall = (channel, fn) => ipcMain.handle(channel, (event, value) => {
   return fn(value);
 });
 
-shellCall('games', () => ({ server: SERVER, games: games.map(({ dir, page, ...rest }) => rest) }));
+shellCall('games', () => ({ server: SERVER, games: games.map(({ dir, page, icon, ...rest }) => rest) }));
 shellCall('game:open', openGame);
 shellCall('game:close', closeGame);
 shellCall('game:bounds', (b) => {
@@ -118,7 +120,7 @@ shellCall('game:send', ({ token, msg } = {}) => { if (gameView && token === game
 ipcMain.on('game:message', (event, text) => { if (fromGame(event)) fromGameText(text); });
 
 function createWindow() {
-  win = new BrowserWindow({ width: 1080, height: 800, minWidth: 360, minHeight: 560, show: false, backgroundColor: '#12211f', title: 'OpenGames',
+  win = new BrowserWindow({ width: 1080, height: 800, minWidth: 360, minHeight: 560, show: false, backgroundColor: '#100a20', title: 'OpenGames',
     webPreferences: { ...safePage, preload: path.join(import.meta.dirname, 'shell-preload.cjs') } });
   lockPage(win.webContents);
   win.once('ready-to-show', () => (process.env.OPENGAMES_QUIET ? win.showInactive() : win.show()));

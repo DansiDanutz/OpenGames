@@ -8,5 +8,6 @@
   "players": { "min": 2, "max": 2 },
   "minutes": 3,
   "page": "index.html",
+  "icon": "icon.svg",
   "rules": "rules.js"
 }

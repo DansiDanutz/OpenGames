@@ -31,7 +31,7 @@ function drawLibrary() {
     code.setAttribute('aria-label', `Match code for ${game.name}`);
     const join = el('form', { className: 'join', onsubmit: (e) => { e.preventDefault(); if (code.value.trim()) begin(game, { t: 'join', code: code.value.trim() }); } },
       code, el('button', { textContent: 'Join' }));
-    return el('li', {},
+    return el('li', {}, el('img', { className: 'art', src: `/icons/${game.id}`, alt: '' }),
       el('div', {}, el('h3', { textContent: game.name }), el('p', { textContent: game.summary }),
         el('p', { className: 'facts', textContent: `2 players, about ${game.minutes} min. By ${game.author}, ${game.license} license.` }),
         el('p', { className: 'facts', textContent: r.wins + r.losses + r.draws ? `You won ${r.wins} and lost ${r.losses} on this computer.` : 'Not played yet.' })),

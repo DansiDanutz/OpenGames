@@ -11,7 +11,7 @@
   <p><span>You</span><meter id="mine" min="0" max="100" value="0" aria-label="Your board"></meter></p>
   <p><span>Other player</span><meter id="theirs" min="0" max="100" value="0" aria-label="Other player's board"></meter></p>
 </div>
-<div id="board" role="application" tabindex="0" aria-label="Shikaku board. Move with the arrow keys. Press Space to start a rectangle and Space again to finish it. Backspace removes a rectangle."></div>
+<div class="frame" id="frame"><div id="board" role="application" tabindex="0" aria-label="Shikaku board. Move with the arrow keys. Press Space to start a rectangle and Space again to finish it. Backspace removes a rectangle."></div></div>
 <div class="tools"><button id="undo" type="button">Undo</button><button id="clear" type="button">Clear</button></div>
 <p id="say" role="status">Split the grid into rectangles. Each one holds one number, and that number is its size.</p>
 <script type="module" src="page.js"></script>

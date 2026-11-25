@@ -14,11 +14,31 @@ function place(node, { r0, c0, r1, c1 }) {
   Object.assign(node.style, { left: pc(c0), top: pc(r0), width: pc(c1 - c0 + 1), height: pc(r1 - r0 + 1) });
   return node;
 }
+/* Each block keeps its colour, and neighbours never share one. */
+const COLOURS = ['#ff9d00', '#a61cff', '#7ecb00', '#ff2f9e', '#0a95ff', '#00c9a0', '#ff5138'];
+const colours = new WeakMap();
+const touching = (a, b) => !(a.c1 + 1 < b.c0 || a.c0 > b.c1 + 1 || a.r1 + 1 < b.r0 || a.r0 > b.r1 + 1);
+function colourOf(rect) {
+  if (!colours.has(rect)) {
+    const taken = new Set(rects.filter((x) => x !== rect && touching(x, rect)).map((x) => colours.get(x)));
+    const uses = (c) => rects.filter((x) => colours.get(x) === c).length;
+    const free = COLOURS.filter((c) => !taken.has(c));
+    colours.set(rect, (free.length ? free : COLOURS).reduce((best, c) => (uses(c) < uses(best) ? c : best)));
+  }
+  return colours.get(rect);
+}
+let fresh = null;
+function block(rect) {
+  const right = isRight(puzzle, rect), node = layer(`rect ${right ? 'right' : 'wrong'}${rect === fresh ? ' fresh' : ''}`, rect);
+  node.style.setProperty('--c', colourOf(rect));
+  return node;
+}
 const layer = (name, rect) => place(Object.assign(document.createElement('div'), { className: name }), rect);
 function draw() {
   $('board').querySelectorAll('.rect,.ghost,.cursor').forEach((x) => x.remove());
-  $('board').append(...rects.map((x) => layer(`rect ${isRight(puzzle, x) ? 'right' : 'wrong'}`, x)),
-    ...(from ? [layer('ghost', box(from, at))] : []), layer('cursor', box(at, at)));
+  $('board').append(...rects.map(block),
+    ...(from ? [layer('ghost', box(from, at))] : []), ...(playing ? [layer('cursor', box(at, at))] : []));
+  fresh = null;
   $('mine').value = (covered() / puzzle.length ** 2) * 100;
   for (const id of ['undo', 'clear']) $(id).disabled = !playing || !rects.length;
 }
@@ -28,7 +48,7 @@ function changed() {
   const n = covered();
   if (n !== sent) { sent = n; table.play({ type: 'cover', cells: n }); }
 }
-function add(rect) { rects = [...rects.filter((x) => !overlap(x, rect)), rect]; changed(); }
+function add(rect) { rects = [...rects.filter((x) => !overlap(x, rect)), rect]; fresh = rect; changed(); }
 function remove(cell) {
   const kept = rects.filter((x) => !overlap(x, box(cell, cell)));
   if (kept.length === rects.length) return false;
@@ -72,7 +92,7 @@ $('clear').onclick = () => { rects = []; changed(); };
 
 const table = await connect(rules, {
   start({ view, me: seat }) {
-    me = seat; puzzle = view.puzzle; playing = true; rects = [];
+    me = seat; puzzle = view.puzzle; playing = true; rects = []; $('frame').classList.remove('solved');
     $('board').style.setProperty('--n', puzzle.length);
     $('board').replaceChildren(...puzzle.flat().map((v) => Object.assign(document.createElement('div'), { className: 'cell', textContent: v || '' })));
     draw();
@@ -82,6 +102,7 @@ const table = await connect(rules, {
   refused() { $('say').textContent = 'That move was not accepted.'; },
   end({ result }) {
     playing = false; from = null; draw();
+    if (result.winner === me) $('frame').classList.add('solved');
     $('say').textContent = result.winner === me ? 'Solved. You win.' : 'The match is over.';
   },
 });
