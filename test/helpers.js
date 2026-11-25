@@ -27,7 +27,7 @@ export function wires({ tamper = (m) => m } = {}) {
   a.send = carry(b, tamper); b.send = carry(a, (m) => m);
   return [a, b];
 }
-export async function pair({ tamper, guestRules = shikaku, hostRules = shikaku, game = GAME, guestGame = game, lateGuest = false, terms = {}, ticket = null, onTerms = () => true, identities = [], namedPub = null } = {}) {
+export async function pair({ tamper, guestRules = shikaku, hostRules = shikaku, game = GAME, guestGame = game, lateGuest = false, stays = false, terms = {}, ticket = null, onTerms = () => true, identities = [], namedPub = null } = {}) {
   const people = [identities[0] ?? await createIdentity(), identities[1] ?? await createIdentity()];
   const [wa, wb] = wires({ tamper });
   const side = async (wire, host, rules, game) => {
@@ -37,7 +37,7 @@ export async function pair({ tamper, guestRules = shikaku, hostRules = shikaku, 
     s.identity = people[host ? 0 : 1];
     const theirPub = namedPub === 'right' ? people[host ? 1 : 0].pub : namedPub;
     s.session = new Session({ wire, table: s.table, identity: s.identity, host, game, terms, ticket, theirPub, name: host ? 'Ann' : 'Bob',
-      on: { terms: onTerms, started: began, failed: (r) => { s.failed = r; began(); }, over: (o) => { s.over = o; } } });
+      on: { terms: onTerms, started: began, failed: (r) => { s.failed = r; began(); }, over: (o) => { s.over = o; }, ...(stays ? { lost: () => { s.lost = true; } } : {}) } });
     return s;
   };
   const host = await side(wa, true, hostRules, game);

@@ -52,13 +52,24 @@ export const shot = async (p, name) => {
 };
 /* One game's row in the library. */
 export const row = (p, game) => p.page.locator('#games li').filter({ has: p.page.locator(`img[src="/icons/${game}"]`) });
-/* Chooses the rules of a match as its host. */
+/* Chooses the rules in a game's room. */
 export async function choose(p, { options = {}, rounds = 1 } = {}) {
-  await p.page.waitForSelector('#setup:not([hidden])');
+  await p.page.waitForSelector('#room:not([hidden])');
+  await p.page.evaluate(() => { document.getElementById('roomRules').open = true; });
   for (const [id, value] of Object.entries(options)) await p.page.locator(`input[name="option-${id}"][value="${value}"]`).check();
   await p.page.locator(`input[name="rounds"][value="${rounds}"]`).check();
-  await shot(p, 'setup');
-  await p.page.click('#setupGo');
+  await shot(p, 'room');
+}
+/* Into a game's room, and from there somewhere. */
+export async function enter(p, game, rules) {
+  await row(p, game).getByText('Play', { exact: true }).click();
+  await choose(p, rules);
+}
+export async function join(p, game, code) {
+  await row(p, game).getByText('Play', { exact: true }).click();
+  await p.page.waitForSelector('#room:not([hidden])');
+  await p.page.fill('#joinCode', code);
+  await p.page.click('#joinForm button');
 }
 /* The other player reads the rules and accepts them. */
 export async function accept(p, pattern) {
@@ -68,13 +79,11 @@ export async function accept(p, pattern) {
   await p.page.click('#termsYes');
 }
 export async function invite(a, b, game = 'shikaku', rules = {}) {
-  await row(a, game).getByText('Invite a friend').click();
-  await choose(a, rules);
-  await a.page.waitForFunction(() => /^[A-Z2-9]{8}$/.test(document.getElementById('code').textContent), null, { polling: 100 });
+  await enter(a, game, rules);
+  await a.page.waitForSelector('#share:not([hidden])');
   const code = await a.page.textContent('#code');
   await shot(a, 'invite');
-  await row(b, game).locator('.join input').fill(code);
-  await row(b, game).locator('.join button').click();
+  await join(b, game, code);
   await accept(b, rules.expect);
   await Promise.all([a, b].map((p) => status(p, /^Playing$/)));
 }

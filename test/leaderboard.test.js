@@ -102,7 +102,7 @@ async function ticketFrom(port, identities) {
   const open = (ask, pub) => new Promise((resolve) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}`), got = {};
     ws.onopen = () => ws.send(JSON.stringify({ ...ask, key: KEY, pub }));
-    ws.onmessage = ({ data }) => { const m = JSON.parse(data); if (m.t === 'paired') { got.done({ ticket: m.ticket, pub: m.pub, ws }); } else resolve({ code: m.code, paired }); };
+    ws.onmessage = ({ data }) => { const m = JSON.parse(data); if (m.t === 'seat') return; if (m.t === 'paired') { got.done({ ticket: m.ticket, pub: m.pub, ws }); } else resolve({ code: m.code, paired }); };
     const paired = new Promise((r) => { got.done = (x) => { resolve(x); r(x); }; });
   });
   const first = await open({ t: 'find' }, identities[0].pub), second = await open({ t: 'find' }, identities[1].pub), one = await first.paired;

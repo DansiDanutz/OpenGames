@@ -1,6 +1,6 @@
 /* Every other game, played to the end in two real app windows. */
 import assert from 'node:assert/strict';
-import { choose, closeAll, inGame, invite, open, row, shot, status } from './windows.js';
+import { closeAll, enter, inGame, invite, open, row, shot, status } from './windows.js';
 
 const press = `(board, r0, c0, r1, c1) => {
   const ev = (type, r, c) => { const { x, y } = board.pointOf(r, c); board.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, buttons: 1, clientX: x, clientY: y })); };
@@ -106,10 +106,10 @@ async function boards(ann) {
   await ann.page.click('#boardBack');
 }
 async function declined(ann, bob) {
-  await row(ann, 'shikaku').getByText('Find a player').click();
-  await choose(ann);
-  await row(bob, 'shikaku').getByText('Find a player').click();
-  await choose(bob);
+  await enter(ann, 'shikaku');
+  await ann.page.click('#find');
+  await enter(bob, 'shikaku');
+  await bob.page.click('#find');
   const joiner = await Promise.race([ann, bob].map((p) => p.page.waitForSelector('#terms:not([hidden])').then(() => p)));
   await joiner.page.click('#termsNo');
   await Promise.all([ann, bob].map((p) => p.page.waitForSelector('#library:not([hidden])')));

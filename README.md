@@ -25,7 +25,7 @@ The player who starts a match chooses the rules: the board, easy or hard, heads-
 | Gemhold | 5, 6, 7, 10 | open field | rocks on the field |
 | Avioane & Bărcuțe | 8, 10, 12 | a miss beside a piece is "near" | a miss is only a miss |
 
-1. The match server pairs two players who have the same version of a game. An invite can be copied, or opened in WhatsApp with one click; the player sends it.
+1. The match server pairs two players who have the same version of a game. A player opens a game first; its room is open at once, and one tap puts the invite into WhatsApp. The link carries the code, the rules and the host's name, so the friend reads them and starts with one tap. A room lasts for as many matches as the two like (12 hours at most) and outlives a lost connection: the two are introduced again, the host sends what the guest missed, and the match goes on. Only a page that was closed in the middle loses its match; then the room stays and they can play again.
 2. The two computers try a direct connection. If that fails, or a player hides their address, the server passes the messages on.
 3. Each player commits to a secret, then both reveal it. Together the secrets make the seed, so neither player can choose the board.
 4. Every move is signed by its player and checked by the game's rules on both computers. The rules the players agreed on are part of what they sign. The moves form a signed chain, so a referee can replay the match.

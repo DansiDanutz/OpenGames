@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('desk', {
   submitResult: (value) => ipcRenderer.invoke('result', value),
   leaderboard: (game) => ipcRenderer.invoke('leaderboard', game),
   openLink: (id, kind) => ipcRenderer.invoke('link', { id, kind }),
-  invite: (id, code, how) => ipcRenderer.invoke('invite', { id, code, how }),
+  invite: (id, code, how, says) => ipcRenderer.invoke('invite', { ...says, id, code, how }),
   onGame: (fn) => ipcRenderer.on('game:message', (_event, { token, msg }) => fn(token, msg)),
   onGameGone: (fn) => ipcRenderer.on('game:gone', () => fn()),
 });

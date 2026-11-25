@@ -1,8 +1,8 @@
 /* Connects two players. The match server introduces them; then they try a
    direct connection. When that fails, or a player hides their address, the
    match server passes the messages on. */
-const DIRECT_MS = 6000;
-const AGAIN_MS = 2000, WAIT_MS = 10 * 60 * 1000;
+const DIRECT_MS = 3000;
+const AGAIN_MS = 1500, BEAT_MS = 4000, QUIET_MS = 14_000;
 const MAX_TEXT = 24 * 1024;
 
 const MAX_SDP = 8 * 1024, MAX_CANDIDATES = 30;
@@ -36,60 +36,81 @@ const parse = (text) => {
   try { return JSON.parse(text); } catch { return undefined; }
 };
 
-/* Opens the line to the match server. `on` gets: code, searching, paired, error, closed. */
-export function meet({ url, key, ask, on, Socket = globalThis.WebSocket, againMs = AGAIN_MS, waitMs = WAIT_MS }) {
-  let ws, paired = false, ended = false, peer = null, back = null, since = 0;
-  const end = (reason) => { if (ended) return; ended = true; if (!paired) on.closed?.(reason); else peer?.lost(); };
-  const send = (msg) => { if (ws.readyState === 1) ws.send(JSON.stringify(msg)); };
-  // A phone that shows another app cuts the connection. An invite waits on the server; its player comes back to it.
+/* The line to the match server, for a whole room: it comes back by itself when a phone has cut it. `on` gets code,
+   seat, searching, waiting, paired, away, here, link, again, left, error, closed. */
+const PASSED = ['searching', 'waiting', 'error', 'away', 'here', 'link', 'again'];
+export function meet({ url, key, ask, on, Socket = globalThis.WebSocket, againMs = AGAIN_MS, page = globalThis.document }) {
+  let ws, ended = false, peer = null, epoch = 0, back = ask.back ?? null, soon = null;
+  const say = (msg) => { if (ws?.readyState === 1) ws.send(JSON.stringify(msg)); };
+  const end = (reason) => { if (ended) return; ended = true; clearTimeout(soon); page?.removeEventListener?.('visibilitychange', wake); peer?.lost(); if (ws.readyState < 2) ws.close(); on.closed?.(reason); };
   const cut = () => {
     if (ended) return;
-    if (paired || !back) end('offline');
-    else if (Date.now() - since > waitMs) end('expired');
-    else setTimeout(() => { if (!ended) connect(); }, againMs).unref?.();
+    peer?.lost();
+    if (!back) { end('offline'); return; }
+    on.cut?.();
+    clearTimeout(soon);
+    soon = setTimeout(connect, againMs);
+    soon.unref?.();
   };
   const receive = ({ data }) => {
     const msg = parse(data);
-    if (!msg) return;
-    if (msg.t === 'code' && typeof msg.back === 'string' && !back) { back = msg.back; since = Date.now(); }
-    if (msg.t === 'code' || msg.t === 'searching' || msg.t === 'waiting' || msg.t === 'error') on[msg.t]?.(msg);
-    else if (msg.t === 'expired') end('expired');
-    else if (msg.t === 'paired' && !paired) {
-      paired = true;
+    if (!msg || ended) return;
+    if (msg.t === 'seat' && typeof msg.back === 'string') {
+      back = msg.back;
+      if (typeof msg.code === 'string' && msg.host === true) on.code?.({ code: msg.code });
+      if (Number.isInteger(msg.epoch)) epoch = msg.epoch;
+      on.seat?.({ back, host: msg.host === true, met: epoch > 0 });
+    } else if (PASSED.includes(msg.t)) { if (msg.t === 'away') peer?.lost(); on[msg.t]?.(msg); }
+    else if (msg.t === 'expired' || msg.t === 'left') end(msg.t);
+    else if (msg.t === 'paired' && Number.isInteger(msg.epoch)) {
+      const own = epoch = msg.epoch;
+      peer?.lost();
       peer = { signal: () => {}, relay: () => {}, lost: () => {} };
-      on.paired({ host: msg.host === true, ticket: typeof msg.ticket === 'string' ? msg.ticket : null, theirPub: typeof msg.pub === 'string' ? msg.pub : null, peer, send, close: () => { ended = true; ws.close(); } });
-    } else if (msg.t === 'signal') peer?.signal(msg.data);
-    else if (msg.t === 'relay') peer?.relay(msg.data);
-    else if (msg.t === 'gone') peer?.lost();
+      on.paired({ host: msg.host === true, ticket: typeof msg.ticket === 'string' ? msg.ticket : null, theirPub: typeof msg.pub === 'string' ? msg.pub : null, peer,
+        send: (out) => { if (own === epoch) say({ ...out, epoch: own }); } });
+    } else if (msg.epoch === epoch && (msg.t === 'signal' || msg.t === 'relay')) peer?.[msg.t](msg.data);
   };
   function connect() {
+    if (ended) return;
+    clearTimeout(soon);
     const mine = new Socket(url);
     ws = mine;
     let isCut = false;
     const lost = () => { if (isCut || ws !== mine) return; isCut = true; cut(); };
-    mine.onopen = () => send({ ...ask, key, ...(ask.t === 'create' ? { stays: true } : {}), ...(back ? { back } : {}) });
+    mine.onopen = () => say(back ? { t: 'back', key, back, pub: ask.pub } : { ...ask, key });
     mine.onerror = lost;
     mine.onclose = lost;
     mine.onmessage = (event) => { if (ws === mine) receive(event); };
   }
+  /* Whoever looks at the page again should not wait. */
+  function wake() { if (!ended && !page.hidden && back && ws.readyState > 1) connect(); }
+  page?.addEventListener?.('visibilitychange', wake);
   connect();
-  /* A canceled invite must not wait for a friend, also when the connection is just being cut. */
-  const cancel = () => {
-    ended = true;
-    if (ws.readyState === 1 || !back || paired) { send({ t: 'leave' }); ws.close(); return; }
-    ws.close();
-    const last = new Socket(url);
-    last.onerror = () => {};
-    last.onopen = () => { for (const msg of [{ ...ask, key, stays: true, back }, { t: 'leave' }]) last.send(JSON.stringify(msg)); last.close(); };
+  return {
+    link: () => say({ t: 'link', epoch }),
+    again: () => say({ t: 'again', epoch }),
+    isOpen: () => !ended && ws.readyState === 1,
+    /* Leaves the room for good, also when the connection is just being cut. */
+    cancel() {
+      if (ended) return;
+      ended = true;
+      clearTimeout(soon);
+      page?.removeEventListener?.('visibilitychange', wake);
+      if (ws.readyState === 1 || !back) { say({ t: 'leave' }); ws.close(); return; }
+      ws.close();
+      const last = new Socket(url);
+      last.onerror = () => {};
+      last.onopen = () => { for (const msg of [{ t: 'back', key, back }, { t: 'leave' }]) last.send(JSON.stringify(msg)); last.close(); };
+    },
   };
-  return { cancel };
 }
 
-/* Resolves to { mode: 'direct' | 'relay', send, close, onMessage, onClose }. */
-export function link({ host, peer, send, close }, { hideAddress = false, iceServers = [], directMs = DIRECT_MS, Connection = globalThis.RTCPeerConnection } = {}) {
+/* Resolves to { mode: 'direct' | 'relay', theirs, send, close, onMessage, onClose }. `have` is the match this side is in the
+   middle of, `theirs` the other side's. */
+export function link({ host, peer, send }, { have = null, hideAddress = false, iceServers = [], directMs = DIRECT_MS, beatMs = BEAT_MS, quietMs = QUIET_MS, Connection = globalThis.RTCPeerConnection } = {}) {
   return new Promise((resolve, reject) => {
     const direct = !hideAddress && !!Connection;
-    let pc = null, channel = null, mode = null, settled = false, shut = false, timer = null, candidates = 0;
+    let pc = null, channel = null, mode = null, settled = false, shut = false, timer = null, candidates = 0, beat = null, heard = 0, ticked = 0, isReady = false;
     const inbox = [];
     const wire = {
       mode: null, onClose: () => {},
@@ -98,12 +119,29 @@ export function link({ host, peer, send, close }, { hideAddress = false, iceServ
         if (shut || text.length > MAX_TEXT) return;
         if (mode === 'direct') { if (channel.readyState === 'open') channel.send(text); } else send({ t: 'relay', data: msg });
       },
-      close() { if (shut) return; shut = true; clearTimeout(timer); channel?.close(); pc?.close(); close(); },
-      set onMessage(fn) { deliver = fn; inbox.splice(0).forEach(fn); },
+      close() { if (shut) return; shut = true; clearTimeout(timer); clearInterval(beat); channel?.close(); pc?.close(); },
+      set onMessage(fn) { pass = fn; inbox.splice(0).forEach(fn); },
     };
-    let deliver = (msg) => { if (inbox.length < 64) inbox.push(msg); };
-    const lost = () => { if (shut) return; wire.close(); if (settled) wire.onClose(); else reject(new Error('The other player left.')); };
-    const settle = () => { if (settled || shut) return; settled = true; clearTimeout(timer); wire.mode = mode; resolve(wire); };
+    const deliver = (msg) => {
+      heard = Date.now();
+      if (msg?.t === 'have' && theirs === undefined) { theirs = typeof msg.match === 'string' ? msg.match : null; if (settled) begin(); } else if (msg?.t !== 'beat') pass(msg);
+    };
+    let pass = (msg) => { if (inbox.length < 64) inbox.push(msg); };
+    const lost = () => { if (shut) return; wire.close(); if (isReady) wire.onClose(); else reject(new Error('The other player left.')); };
+    const settle = () => { if (settled || shut) return; settled = true; clearTimeout(timer); wire.mode = mode; listenForSilence(); wire.send({ t: 'have', match: have }); if (theirs !== undefined) begin(); };
+    let theirs;
+    const begin = () => { isReady = true; wire.theirs = theirs; resolve(wire); };
+    /* A line that died without a word. After a sleep of this device the count starts again. */
+    const listenForSilence = () => {
+      heard = ticked = Date.now();
+      beat = setInterval(() => {
+        const now = Date.now();
+        if (now - ticked > beatMs * 3) heard = now;
+        ticked = now;
+        if (now - heard > quietMs) lost(); else wire.send({ t: 'beat' });
+      }, beatMs);
+      beat.unref?.();
+    };
     const choose = (m) => {                              // only the host chooses
       if (mode) return;
       mode = m;

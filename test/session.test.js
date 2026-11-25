@@ -172,3 +172,79 @@ test('in a ranked match the other player is the one the server named', async () 
   assert.equal((await pair({ ticket: TICKET, namedPub: 'right' })).guest.failed, null);
   assert.match((await pair({ ticket: TICKET, namedPub: 'c'.repeat(64) })).guest.failed, /not the player/);
 });
+
+/* ---- a line that is lost and comes back */
+const cutOff = (p) => { p.guest.wire.close(); p.guest.wire.onClose(); };
+async function again(p, change) {
+  const [a, b] = wires(change);
+  await Promise.all([p.host.session.resume(a), p.guest.session.resume(b)]);
+  Object.assign(p.host, { wire: a }); Object.assign(p.guest, { wire: b });
+}
+test('a match goes on over a new line: nothing is lost, nothing happens twice', async () => {
+  const p = await pair({ stays: true });
+  await p.guest.session.play(inRound(p.guest, { type: 'cover', cells: 4 }));
+  await until(() => p.host.session.transcript().entries.length === 1);
+  cutOff(p);
+  await until(() => p.host.lost && p.guest.lost);
+  // Both play on while there is no line.
+  await p.guest.session.play(inRound(p.guest, { type: 'cover', cells: 8 }));
+  await p.host.session.play(inRound(p.host, { type: 'cover', cells: 3 }));
+  assert.equal(p.guest.session.transcript().entries.length, 1);
+  await again(p);
+  await until(() => p.host.session.transcript().entries.length === 3 && p.guest.session.transcript().entries.length === 3);
+  await p.guest.session.play(solution(p.guest));
+  await until(() => p.host.over && p.guest.over);
+  assert.deepEqual([p.host.failed, p.guest.failed, p.guest.over.result.winner], [null, null, 1]);
+  assert.deepEqual(p.host.over.transcript, p.guest.over.transcript);
+});
+test('a winning move that was on its way when the line was lost still counts', async () => {
+  let drop = false;
+  const p = await pair({ stays: true, tamper: (m) => (drop ? null : m) });
+  drop = true;
+  await p.host.session.play(solution(p.host));
+  await until(() => p.host.over);
+  cutOff(p);
+  await again(p);
+  await until(() => p.guest.over);
+  assert.equal(p.guest.over.result.winner, 0);
+});
+test('a refusal that got lost is told again', async () => {
+  let drop = false;
+  const p = await pair({ stays: true, tamper: (m) => (drop && m.t === 'refused' ? null : m) });
+  drop = true;
+  await p.guest.session.play(inRound(p.guest, { type: 'nonsense' }));
+  await new Promise((r) => { setTimeout(r, 50); });
+  cutOff(p);
+  await until(() => p.guest.lost);
+  assert.deepEqual(p.guest.table.refusals, []);
+  await again(p);
+  await until(() => p.guest.table.refusals.length === 1);
+});
+test('odd messages about coming back end the match, and cost little', async () => {
+  for (const msg of [{ t: 'resume' }, { t: 'resume', match: 'x', seq: 0 }]) {
+    const p = await pair({ stays: true });
+    p.guest.wire.send(msg);
+    await until(() => p.host.failed);
+  }
+  for (const seq of [-1, 5, 1.5, '0', null]) {
+    const p = await pair({ stays: true }), { match } = p.host.session;
+    cutOff(p);
+    const [a, b] = wires();
+    await p.host.session.resume(a);
+    b.onMessage = () => {};
+    b.send({ t: 'resume', match, seq });
+    await until(() => p.host.failed);
+  }
+  // Asking twice over one line does not send the match twice.
+  const p = await pair({ stays: true }), { match } = p.host.session;
+  cutOff(p);
+  const [a, b] = wires();
+  await p.host.session.resume(a);
+  b.onMessage = () => {};
+  b.send({ t: 'resume', match, seq: 0 });
+  b.send({ t: 'resume', match, seq: 0 });
+  await until(() => p.host.failed);
+  const q = await pair({ stays: true });
+  q.host.wire.send({ t: 'caught', n: 0 });
+  await until(() => q.guest.failed);
+});

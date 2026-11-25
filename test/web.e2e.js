@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { chromium, webkit, devices } from 'playwright-core';
 import { readLibrary } from '../app/library.js';
+import { inviteLink } from '../app/shell/invite.js';
 import { createLeaderboard } from '../server/leaderboard.js';
 import { startMatchServer } from '../server/match-server.js';
 import { createPlay } from '../server/play.js';
@@ -17,6 +18,14 @@ const errors = [];
 async function open(hash = '') {
   const context = await browser.newContext(devices[isWebkit ? 'iPhone 13' : 'Pixel 7']);
   const page = await context.newPage();
+  // So that the test can cut every line of this phone, as another app does.
+  await page.addInitScript(() => {
+    globalThis.lines = [];
+    for (const name of ['WebSocket', 'RTCPeerConnection']) {
+      const Real = globalThis[name];
+      globalThis[name] = class extends Real { constructor(...x) { super(...x); globalThis.lines.push(this); } };
+    }
+  });
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(`${at}/play${hash}`);
@@ -88,8 +97,9 @@ try {
   assert.deepEqual(await me(), before);
   // Every game opens in its locked frame and starts against the computer.
   for (const g of games) {
-    await card(ann, g.name).getByText('Play alone').click();
-    await ann.click('#setupGo');
+    await card(ann, g.name).getByText('Play', { exact: true }).click();
+    await ann.waitForSelector('#share:not([hidden])');
+    await ann.click('#solo');
     await ann.waitForFunction(() => document.getElementById('status').textContent === 'Playing', null, { timeout: 20_000 });
     const frame = ann.frames().find((f) => f.url().includes(`/table/${g.id}/`));
     const inside = await frame.evaluate(async () => {
@@ -114,8 +124,8 @@ try {
     await ann.click('#leave');
   }
   // A game that tries to leave its frame gets nowhere.
-  await card(ann, 'Shikaku').getByText('Play alone').click();
-  await ann.click('#setupGo');
+  await card(ann, 'Shikaku').getByText('Play', { exact: true }).click();
+  await ann.click('#solo');
   await ann.waitForFunction(() => document.getElementById('status').textContent === 'Playing');
   const asked = [];
   ann.on('request', (r) => asked.push(r.url()));
@@ -130,29 +140,66 @@ try {
   await ann.click('#leave');
   // An invite opens the match on the friend's phone.
   await ann.evaluate(() => { globalThis.sent = []; globalThis.open = (url) => { globalThis.sent.push(url); }; });
-  await card(ann, 'Shikaku').getByText('Invite a friend').click();
-  await ann.click('#setupGo');
+  await card(ann, 'Shikaku').getByText('Play', { exact: true }).click();
+  await ann.waitForSelector('#share:not([hidden])');
   await ann.waitForFunction(() => /^[A-Z2-9]{8}$/.test(document.getElementById('code').textContent));
   await ann.click('#share [data-how=whatsapp]');
   await ann.waitForSelector('text=WhatsApp is opening');
-  assert.match((await ann.evaluate(() => globalThis.sent))[0], /^https:\/\/wa\.me\/\?text=/);
+  const said = new URL((await ann.evaluate(() => globalThis.sent))[0]).searchParams.get('text');
   await shot(ann, 'invite');
   const code = await ann.textContent('#code');
+  assert.ok(said.includes(code));
   const explain = async (error) => {
     for (const p of [ann, bob]) console.log(await p.evaluate(() => JSON.stringify([document.body.dataset.screen, ...['status', 'mode', 'notice', 'waitTitle', 'waitText'].map((id) => document.getElementById(id).textContent), document.querySelectorAll('iframe').length])));
     console.log(errors.filter((e) => !/Content.Security.Policy/.test(e)));
     throw error;
   };
-  const bob = await open(`#shikaku=${code}`);
-  await bob.waitForSelector('text=A friend invites you to play Shikaku');
-  assert.equal(server.counts().open, 1);                 // nobody is connected by a link alone
+  const cut = (p) => p.evaluate(() => globalThis.lines.splice(0).forEach((x) => x.close()));
+  const playing = (p) => p.waitForFunction(() => document.body.dataset.screen === 'match' && document.getElementById('status').textContent === 'Playing', null, { timeout: 20_000 }).catch(explain);
+  // The room waits while its player is in another app, and the page may even be thrown away meanwhile.
+  await cut(ann);
+  await ann.waitForFunction((c) => document.getElementById('code').textContent === c && !document.getElementById('share').hidden, code);
+  await ann.reload();
+  await ann.waitForSelector('#share:not([hidden])');
+  assert.equal(await ann.textContent('#code'), code);
+  const terms = JSON.parse(await ann.evaluate(() => localStorage.getItem('terms:shikaku')));
+  const bob = await open(new URL(inviteLink({ game: games.find((g) => g.id === 'shikaku'), code, server: 'https://x.example', terms, name: 'Ann' })).hash);
+  await bob.waitForSelector('text=Ann invites you to play');
+  await bob.waitForTimeout(300);
+  assert.equal(server.counts().open, 1);
+  assert.equal(await ann.evaluate(() => document.body.dataset.screen), 'room');       // nobody is connected by a link alone
   await shot(bob, 'invited');
-  await bob.click('#invitedYes');
-  await bob.waitForSelector('#terms:not([hidden])', { timeout: 20_000 }).catch(explain);
   assert.equal(new URL(bob.url()).hash, '');
-  await bob.click('#termsYes');
-  for (const p of [ann, bob]) await p.waitForFunction(() => document.getElementById('status').textContent === 'Playing', null, { timeout: 20_000 }).catch(explain);
-  console.log('connection:', await bob.textContent('#mode'));
+  const began = Date.now();
+  await bob.click('#invitedYes');
+  for (const p of [ann, bob]) await playing(p);
+  console.log('connection:', await bob.textContent('#mode'), `${Date.now() - began} ms after one tap`);
+  // The line is lost in the middle of a match, on either side, and the match goes on.
+  for (const p of [ann, bob]) {
+    const from = Date.now();
+    await cut(p);
+    await p.waitForFunction(() => document.getElementById('status').textContent !== 'Playing', null, { timeout: 20_000 }).catch(explain);
+    for (const q of [ann, bob]) await playing(q);
+    console.log('back after', Date.now() - from, 'ms,', await p.textContent('#mode'));
+  }
+  const filled = () => ann.frames().find((f) => f.url().includes('/table/')).evaluate(() => document.getElementById('theirs').value);
+  await bob.frames().find((f) => f.url().includes('/table/')).evaluate(async () => {
+    const { solve } = await import('./rules.js'), b = document.getElementById('board'), [x] = solve(b.inspect().puzzle);
+    b.setPointerCapture = () => {};
+    for (const [type, r, c] of [['pointerdown', x.r0, x.c0], ['pointermove', x.r1, x.c1], ['pointerup', x.r1, x.c1]]) { const p = b.pointOf(r, c); b.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, buttons: 1, clientX: p.x, clientY: p.y })); }
+  });
+  for (let i = 0; i < 40 && !(await filled()); i++) await ann.waitForTimeout(100);
+  assert.ok(await filled() > 0, 'a move after the line came back arrives');
+  // A page that a phone throws away in a match: the match is lost, the room is not.
+  await ann.reload();
+  await bob.waitForSelector('#again:not([hidden])', { timeout: 20_000 }).catch(explain);
+  await ann.waitForSelector('#again:not([hidden])', { timeout: 20_000 }).catch(explain);
+  await ann.click('#again');
+  await bob.waitForSelector('text=wants to play again');
+  await bob.waitForTimeout(1500);
+  await shot(bob, 'again');
+  await bob.click('#again');
+  for (const p of [ann, bob]) await playing(p);
   await bob.click('#leave');
   await ann.waitForSelector('text=gave up');
   await bob.click('#leave');

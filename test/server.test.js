@@ -8,7 +8,7 @@ import { until } from './helpers.js';
 const KEY = `shikaku@${'a'.repeat(64)}`, OTHER = `shikaku@${'b'.repeat(64)}`;
 function client(port, ask, key = KEY) {
   const c = { log: [] };
-  const on = Object.fromEntries(['code', 'searching', 'error', 'closed', 'paired'].map((k) => [k, (v) => { c[k] = v ?? true; c.log.push(k); }]));
+  const on = Object.fromEntries(['code', 'searching', 'error', 'closed', 'paired', 'away'].map((k) => [k, (v) => { c[k] = v ?? true; c.log.push(k); }]));
   Object.assign(c, meet({ url: `ws://127.0.0.1:${port}`, key, ask, on }));
   return c;
 }
@@ -44,7 +44,7 @@ test('leaving frees the code and the queue, and nothing is kept', () => withServ
   await until(() => s.counts().clients === 0);
   assert.deepEqual(s.counts(), { open: 0, queues: 0, clients: 0, addresses: 0 });
 }));
-test('waiting ends after the time limit', () => withServer({ waitMs: 60 }, async (s) => {
+test('waiting ends after the time limit', () => withServer({ findMs: 60 }, async (s) => {
   const a = client(s.port, { t: 'find' });
   await until(() => a.closed);
   assert.equal(a.closed, 'expired');
@@ -91,7 +91,7 @@ test('messages pass through the server when there is no direct connection, and t
   await until(() => got.length === 2);
   let lost = false;
   wb.onClose = () => { lost = true; };
-  wa.close();
+  a.cancel();
   await until(() => lost);
 }));
 test('a server that is off is reported', async () => {
@@ -193,11 +193,12 @@ test('a player who already waits is not sent away because of others at the same 
   assert.deepEqual([other.error, other.closed], [undefined, undefined]);
 }));
 /* A player whose connection can be cut as a phone does it. */
-function phone(port, ask, waitMs) {
+function phone(port, ask) {
   const c = { sockets: [] };
   class Socket extends WebSocket { constructor(url) { super(url); c.sockets.push(this); } }
-  const on = Object.fromEntries(['code', 'waiting', 'error', 'closed', 'paired'].map((k) => [k, (v) => { c[k] = v ?? true; }]));
-  return Object.assign(c, meet({ url: `ws://127.0.0.1:${port}`, key: KEY, ask, on, Socket, againMs: 150, waitMs }), { cut: () => c.sockets.at(-1).close() });
+  const on = Object.fromEntries(['code', 'waiting', 'error', 'closed', 'paired', 'seat', 'away', 'here', 'link', 'again'].map((k) => [k, (v) => { c[k] = v ?? true; }]));
+  const line = meet({ url: `ws://127.0.0.1:${port}`, key: KEY, ask, on, Socket, againMs: 150 });
+  return Object.assign(c, { cancel: line.cancel, askLink: line.link, askAgain: line.again, cut: () => c.sockets.at(-1).close() });
 }
 test('an invite survives a cut connection, and the friend waits for its player', () => withServer({}, async (s) => {
   const a = phone(s.port, { t: 'create' });
@@ -210,7 +211,7 @@ test('an invite survives a cut connection, and the friend waits for its player',
   await until(() => a.paired && (b.paired || other.paired));
   assert.equal(a.code.code, code);
   await until(() => b.error || other.error);
-  assert.equal(s.counts().open, 0);
+  assert.equal(s.counts().open, 1);
 }));
 test('a canceled invite is gone, also for a friend who waits', () => withServer({}, async (s) => {
   const a = phone(s.port, { t: 'create' });
@@ -224,7 +225,7 @@ test('a canceled invite is gone, also for a friend who waits', () => withServer(
 test('a friend who leaves makes room for another', () => withServer({}, async (s) => {
   const a = phone(s.port, { t: 'create' });
   await until(() => a.code);
-  const { code, back } = a.code;
+  const { code } = a.code, { back } = a.seat;
   a.sockets[0].onclose = null; a.sockets[0].close();     // it never comes back by itself
   await until(() => s.counts().clients === 0);
   const b = phone(s.port, { t: 'join', code });
@@ -233,13 +234,13 @@ test('a friend who leaves makes room for another', () => withServer({}, async (s
   await until(() => s.counts().clients === 0);
   const c = phone(s.port, { t: 'join', code });
   await until(() => c.waiting);
-  const again = phone(s.port, { t: 'create', back });
+  const again = phone(s.port, { t: 'back', back });
   await until(() => again.paired && c.paired);
 }));
 test('nobody takes an invite without its secret, and a held invite ends', () => withServer({ waitMs: 1500 }, async (s) => {
   const a = phone(s.port, { t: 'create' });
   await until(() => a.code);
-  const thief = phone(s.port, { t: 'create', back: `${a.code.code}.00000000-0000-4000-8000-000000000000` });
+  const thief = phone(s.port, { t: 'back', back: `${a.code.code}.00000000-0000-4000-8000-000000000000` });
   await until(() => thief.closed);
   assert.equal(thief.closed, 'expired');
   thief.cancel();
@@ -275,12 +276,73 @@ test('no shape of message stops the server', () => withServer({}, async (s) => {
   assert.ok(a.code || a.closed);
   assert.deepEqual(await (await fetch(`http://127.0.0.1:${s.port}/health`)).json(), { ok: true });
 }));
-test('an app that does not come back loses its invite at once', () => withServer({}, async (s) => {
+test('a room ends when nobody comes back to it', () => withServer({ awayMs: 60 }, async (s) => {
   const ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
   ws.onopen = () => ws.send(JSON.stringify({ t: 'create', key: KEY }));
   await until(() => s.counts().open === 1);
   ws.close();
   await until(() => s.counts().open === 0);
+}));
+async function friends(s) {
+  const a = phone(s.port, { t: 'create' });
+  await until(() => a.code);
+  const b = phone(s.port, { t: 'join', code: a.code.code });
+  await until(() => a.paired && b.paired);
+  return [a, b];
+}
+test('two players in a room are introduced again after a lost line, with a new epoch', () => withServer({}, async (s) => {
+  const [a, b] = await friends(s), first = a.paired;
+  a.cut();
+  await until(() => b.away);
+  await until(() => b.here);
+  a.paired = b.paired = null;
+  b.askLink();
+  await until(() => a.link);
+  assert.equal(a.paired, null);
+  a.askLink();
+  await until(() => a.paired && b.paired);
+  assert.deepEqual([a.paired.host, b.paired.host], [true, false]);
+  // What belongs to the earlier line reaches nobody.
+  let late = 0;
+  b.paired.peer.signal = () => { late += 1; };
+  first.send({ t: 'signal', data: { candidate: 1 } });
+  a.sockets.at(-1).send(JSON.stringify({ t: 'signal', epoch: 1, data: {} }));
+  await new Promise((r) => { setTimeout(r, 80); });
+  assert.equal(late, 0);
+  a.paired.send({ t: 'signal', data: { candidate: 1 } });
+  await until(() => late === 1);
+}));
+test('another match begins when both want it, not before', () => withServer({}, async (s) => {
+  const [a, b] = await friends(s);
+  a.paired = b.paired = null;
+  const ask = (p) => p.askAgain();
+  ask(a);
+  await until(() => b.again);
+  assert.equal(b.paired, null);
+  // Somebody whose line was cut still hears the question.
+  b.again = null;
+  b.cut();
+  await until(() => b.again);
+  ask(b);
+  await until(() => a.paired && b.paired);
+}));
+test('whoever leaves a room ends it for both, and a stranger cannot enter it', () => withServer({}, async (s) => {
+  const [a, b] = await friends(s);
+  const stranger = client(s.port, { t: 'join', code: a.code.code });
+  await until(() => stranger.error);
+  const thief = phone(s.port, { t: 'back', back: `${a.code.code}.00000000-0000-4000-8000-000000000000` });
+  await until(() => thief.closed);
+  const wrong = phone(s.port, { t: 'back', back: [a.seat.back] });
+  wrong.cancel();
+  b.cancel();
+  await until(() => a.closed);
+  assert.equal(a.closed, 'left');
+  assert.equal(s.counts().open, 0);
+}));
+test('a room does not last for ever', () => withServer({ roomMs: 150 }, async (s) => {
+  const [a] = await friends(s);
+  await until(() => a.closed);
+  assert.equal(a.closed, 'expired');
 }));
 test('an invite canceled while the connection is cut is gone too', () => withServer({}, async (s) => {
   const a = phone(s.port, { t: 'create' });

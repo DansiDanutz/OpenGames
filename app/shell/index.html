@@ -29,26 +29,32 @@
   </section>
 </main>
 
-<main id="setup" hidden>
-  <form id="setupForm" class="sheet">
-    <h1 id="setupTitle" tabindex="-1"></h1>
-    <p id="setupText"></p>
-    <div id="choices"></div>
-    <div id="rankedPart">
-    <label class="check"><input type="checkbox" id="ranked"> Count this match on the leaderboard</label>
-    <p class="small">A ranked match shows your name on the leaderboard and sends its signed moves to the match server, which checks them. The other player sees this before the match.</p>
+<main id="room" hidden>
+  <div class="sheet">
+    <div class="here"><img id="roomArt" class="art" alt=""><div><h1 id="roomTitle" tabindex="-1"></h1><p id="roomText" role="status"></p></div></div>
+    <div id="share" hidden>
+      <button type="button" class="go big" data-how="whatsapp">Invite on WhatsApp</button>
+      <div class="row even"><button type="button" data-how="message">Copy the invite</button><button type="button" data-how="code">Copy the code <b id="code"></b></button></div>
     </div>
-    <div class="row"><button class="go" id="setupGo"></button><button type="button" id="setupBack">Back</button></div>
-  </form>
+    <p id="shared" role="status"></p>
+    <div class="row even"><button type="button" id="solo">Play alone</button><button type="button" id="find">Find a player</button></div>
+    <details id="roomRules"><summary>Rules: <span id="roomTerms"></span></summary>
+      <form id="choicesForm"><div id="choices"></div>
+      <label class="check"><input type="checkbox" id="ranked"> Count matches on the leaderboard</label>
+      <p class="small">A ranked match shows your name on the leaderboard and sends its signed moves to the match server, which checks them. The other player sees this before the match.</p></form>
+    </details>
+    <form id="joinForm" class="join"><input id="joinCode" aria-label="Match code" placeholder="Got a code?" maxlength="8" autocomplete="off" spellcheck="false"><button>Join</button></form>
+    <div class="row"><button type="button" id="roomBack">Back to games</button></div>
+  </div>
 </main>
 
 <main id="terms" hidden>
   <div class="sheet">
     <h1 id="termsTitle" tabindex="-1"></h1>
     <p id="termsWho"></p>
-    <dl id="termsList"></dl>
+    <dl id="termsList" class="terms"></dl>
     <h2>How to win</h2>
-    <ol id="termsRules"></ol>
+    <ol id="termsRules" class="rules"></ol>
     <div class="row"><button class="go" id="termsYes" type="button">Accept and play</button><button id="termsNo" type="button">Leave</button></div>
   </div>
 </main>
@@ -64,22 +70,19 @@
 </main>
 
 <main id="invited" hidden>
-  <h1 id="invitedTitle" tabindex="-1">Join the match?</h1>
-  <p id="invitedText"></p>
-  <p class="small">Join only if you know who sent the link. With a direct connection the other player can see your internet address.</p>
-  <div class="row"><button type="button" class="go" id="invitedYes">Join</button><button type="button" id="invitedNo">Not now</button></div>
+  <div class="sheet">
+    <div class="here"><img id="invitedArt" class="art" alt=""><div><h1 id="invitedTitle" tabindex="-1"></h1><p id="invitedText"></p></div></div>
+    <button type="button" class="go big" id="invitedYes">Play</button>
+    <dl id="invitedTerms" class="terms"></dl>
+    <details><summary>How to win</summary><ol id="invitedRules" class="rules"></ol></details>
+    <p class="small">Play only if you know who sent the link. With a direct connection the other player can see your internet address.</p>
+    <div class="row"><button type="button" id="invitedNo">Not now</button></div>
+  </div>
 </main>
 
 <main id="wait" hidden>
   <h1 id="waitTitle" tabindex="-1"></h1>
   <p id="waitText"></p>
-  <p id="code" class="code" hidden></p>
-  <div id="share" class="row" hidden>
-    <button type="button" class="go" data-how="whatsapp">Send on WhatsApp</button>
-    <button type="button" data-how="message">Copy invite</button>
-    <button type="button" data-how="code">Copy code</button>
-  </div>
-  <p id="shared" role="status"></p>
   <button id="cancel" type="button">Cancel</button>
 </main>
 
@@ -89,7 +92,7 @@
     <p class="between"><b id="score" aria-label="Games won"></b><span id="mode"></span></p>
     <p class="player p1"><span id="p1"></span></p>
   </div>
-  <div class="status"><p id="status" role="status"></p><p id="rules" class="small"></p><button id="leave" type="button">Give up</button></div>
+  <div class="status"><p id="status" role="status"></p><p id="rules" class="small"></p><button id="again" class="go" type="button" hidden>Play again</button><button id="leave" type="button">Give up</button></div>
   <div id="stage"></div>
 </main>
 <div id="notice" role="alert"></div>
