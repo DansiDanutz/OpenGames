@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { readLibrary } from '../app/library.js';
-import { createPlay, joinPages, swap } from '../server/play.js';
+import { createPlay, gamePage, joinPages, swap } from '../server/play.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const games = readLibrary(path.join(ROOT, 'games'), path.join(ROOT, 'kit'));
@@ -42,6 +42,13 @@ test('answers are compressed, and not sent twice', () => {
   assert.deepEqual(gunzipSync(first.body), play('/kit/three.js').body);
   const again = play('/kit/three.js', { 'if-none-match': first.headers.etag });
   assert.deepEqual([again.status, again.body], [304, '']);
+});
+test('what locks a game runs before anything of the game, however its page is written', () => {
+  for (const html of ['<!DOCTYPE html>\n<HTML><HEAD lang=en><script src=x.js></script>', '<script src=x.js></script>', '']) {
+    const page = gamePage(Buffer.from(html));
+    assert.match(page, /^(<!doctype html>)?<script src="\/web\/game\.js"><\/script>/i);
+    assert.ok(page.endsWith(html.replace(/^<!doctype html>/i, '')));
+  }
 });
 test('it can be installed on a phone', () => {
   const m = JSON.parse(play('/web/manifest.json').body);

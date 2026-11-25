@@ -67,13 +67,22 @@ export function meet({ url, key, ask, on, Socket = globalThis.WebSocket, againMs
     ws = mine;
     let isCut = false;
     const lost = () => { if (isCut || ws !== mine) return; isCut = true; cut(); };
-    mine.onopen = () => send({ ...ask, key, ...(back ? { back } : {}) });
+    mine.onopen = () => send({ ...ask, key, ...(ask.t === 'create' ? { stays: true } : {}), ...(back ? { back } : {}) });
     mine.onerror = lost;
     mine.onclose = lost;
     mine.onmessage = (event) => { if (ws === mine) receive(event); };
   }
   connect();
-  return { cancel() { ended = true; send({ t: 'leave' }); ws.close(); } };
+  /* A canceled invite must not wait for a friend, also when the connection is just being cut. */
+  const cancel = () => {
+    ended = true;
+    if (ws.readyState === 1 || !back || paired) { send({ t: 'leave' }); ws.close(); return; }
+    ws.close();
+    const last = new Socket(url);
+    last.onerror = () => {};
+    last.onopen = () => { for (const msg of [{ ...ask, key, stays: true, back }, { t: 'leave' }]) last.send(JSON.stringify(msg)); last.close(); };
+  };
+  return { cancel };
 }
 
 /* Resolves to { mode: 'direct' | 'relay', send, close, onMessage, onClose }. */

@@ -46,6 +46,10 @@ globalThis.desk = {
     frame.className = 'game';
     frame.src = `/table/${game.id}/${game.page}`;
     token = mine;
+    // A frame that loads a second time tried to go somewhere else.
+    let loads = 0;
+    const own = frame;
+    own.onload = () => { if (++loads > 1 && own === frame) { closeGame(); onGone(); } };
     document.body.append(frame);
   },
   async closeGame() { closeGame(); },

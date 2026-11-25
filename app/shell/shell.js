@@ -14,7 +14,7 @@ const TEXT = {
   too_many: 'You met many players in a short time. Please wait a minute and try again.',
   bad_request: 'The match server did not accept that. Please try again.',
 };
-const SCREENS = ['library', 'setup', 'terms', 'board', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000;
+const SCREENS = ['library', 'setup', 'terms', 'board', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000;
 let server = '', stun = null, library = [], current = null;      // current: { game, meeting, session, table, over }
 
 function screen(name) {
@@ -287,4 +287,11 @@ drawLibrary();
 /* A link from an invite: #<game>=<code>. */
 const invited = /^#([a-z0-9-]{1,40})=([A-HJ-NP-Z2-9]{8})$/.exec(location.hash), invitedTo = invited && library.find((g) => g.id === invited[1]);
 if (invited) history.replaceState(null, '', location.pathname);
-if (invitedTo) begin(invitedTo, { t: 'join', code: invited[2] });
+/* A link alone connects nobody: the other player would learn this player's address. */
+if (invitedTo) {
+  $('invitedText').textContent = `A friend invites you to play ${invitedTo.name}. ${invitedTo.summary}`;
+  $('invitedYes').onclick = () => begin(invitedTo, { t: 'join', code: invited[2] });
+  $('invitedNo').onclick = () => screen('library');
+  screen('invited');
+  $('invitedTitle').focus();
+}

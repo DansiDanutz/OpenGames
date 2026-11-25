@@ -8,7 +8,7 @@ import { TYPES, readKit } from '../app/library.js';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const SHELL_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' HOST; frame-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-const GAME_POLICY = "sandbox allow-scripts; default-src 'none'; script-src 'self' HOST; style-src 'self' HOST 'unsafe-inline'; img-src 'self' HOST data:; font-src 'self' HOST; media-src 'self' HOST; connect-src 'none'; frame-src 'none'; worker-src 'none'; webrtc 'block'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+const GAME_POLICY = "sandbox allow-scripts; default-src 'none'; script-src 'self' HOST; style-src 'self' HOST 'unsafe-inline'; img-src 'self' HOST data:; font-src 'self' HOST; media-src 'self' HOST; connect-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 const MANIFEST = { name: 'OpenGames', short_name: 'OpenGames', description: 'Open-source games for two players.', id: '/play', start_url: '/play', scope: '/', display: 'standalone', background_color: '#100a20', theme_color: '#100a20',
   icons: [192, 512].map((n) => ({ src: `/web/icon-${n}.png`, sizes: `${n}x${n}`, type: 'image/png' })) };
 const HOST = /^[a-z0-9.-]{1,253}(:\d{1,5})?$/i;
@@ -27,13 +27,17 @@ function shellPage() {
   html = swap(html, '<main id="library">', '<p id="installHelp" hidden>Tap the Share button of your browser, then “Add to Home Screen”.</p>\n<main id="library">');
   return swap(html, '<script type="module" src="shell.js"></script>', '<script type="module" src="/web/desk.js"></script><script type="module" src="/app/shell/shell.js"></script>');
 }
-const gamePage = (data) => swap(data.toString(), '<head>', '<head><script src="/web/game.js"></script>');
+/* Before anything of the game: what is first in the page runs first. */
+export function gamePage(data) {
+  const html = data.toString(), doctype = /^\s*<!doctype html>/i.exec(html)?.[0] ?? '';
+  return `${doctype}<script src="/web/game.js"></script>${html.slice(doctype.length)}`;
+}
 
 function asset(name, data, policy = null, headers = {}) {
   const body = Buffer.from(data), type = TYPES[path.extname(name)];
   const isText = !/^(image\/(png|webp)|font|audio)/.test(type);
   return { body, gzip: isText && body.length >= MIN_GZIP ? gzipSync(body, { level: 9 }) : null, policy, tag: `"${createHash('sha256').update(body).digest('hex').slice(0, 32)}"`,
-    headers: { 'content-type': type, 'cache-control': 'no-cache', vary: 'accept-encoding', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', ...headers } };
+    headers: { 'content-type': type, 'cache-control': 'no-cache', vary: 'accept-encoding, host', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', ...headers } };
 }
 /* Every file there is, read once, by its address. Nothing else can be asked for. */
 function collect(games, kit, stunPort) {

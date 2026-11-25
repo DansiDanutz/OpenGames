@@ -53,12 +53,33 @@ try {
       return tries;
     });
     assert.deepEqual(inside, { origin: 'null', rtc: 'undefined', parent: 'blocked', storage: 'blocked', net: 'blocked' });
+    // A frame of its own does not give back what was taken away.
+    assert.equal(await frame.evaluate(() => {
+      const f = document.createElement('iframe');
+      document.body.append(f);
+      try { return typeof f.contentWindow.RTCPeerConnection; } catch { return 'blocked'; } finally { f.remove(); }
+    }), 'blocked');
     await ann.waitForTimeout(800);
     await shot(ann, g.id);
     await ann.click('#leave');
     await ann.waitForFunction(() => document.getElementById('leave').textContent === 'Back to games');
     await ann.click('#leave');
   }
+  // A game that tries to leave its frame gets nowhere.
+  await card(ann, 'Shikaku').getByText('Play alone').click();
+  await ann.click('#setupGo');
+  await ann.waitForFunction(() => document.getElementById('status').textContent === 'Playing');
+  const asked = [];
+  ann.on('request', (r) => asked.push(r.url()));
+  await ann.frames().find((f) => f.url().includes('/table/')).evaluate((url) => {
+    try { top.location.href = url; } catch { /* refused */ }
+    location.href = url;
+  }, `http://localhost:${server.port}/health`).catch(() => {});
+  await ann.waitForTimeout(800);
+  assert.match(await ann.textContent('#status'), /stopped working/);
+  assert.equal(new URL(ann.url()).pathname, '/play');
+  console.log('a game asked for:', asked.filter((u) => u.includes('localhost')));
+  await ann.click('#leave');
   // An invite opens the match on the friend's phone.
   await ann.evaluate(() => { globalThis.sent = []; globalThis.open = (url) => { globalThis.sent.push(url); }; });
   await card(ann, 'Shikaku').getByText('Invite a friend').click();
@@ -70,10 +91,17 @@ try {
   await shot(ann, 'invite');
   const code = await ann.textContent('#code');
   const bob = await open(`#shikaku=${code}`);
+  await bob.waitForSelector('text=A friend invites you to play Shikaku');
+  assert.equal(server.counts().open, 1);                 // nobody is connected by a link alone
+  await shot(bob, 'invited');
+  await bob.click('#invitedYes');
   await bob.waitForSelector('#terms:not([hidden])', { timeout: 20_000 });
   assert.equal(new URL(bob.url()).hash, '');
   await bob.click('#termsYes');
-  for (const p of [ann, bob]) await p.waitForFunction(() => document.getElementById('status').textContent === 'Playing', null, { timeout: 20_000 });
+  for (const p of [ann, bob]) await p.waitForFunction(() => document.getElementById('status').textContent === 'Playing', null, { timeout: 20_000 }).catch(async (error) => {
+    for (const x of [ann, bob]) console.log(await x.evaluate(() => [document.body.dataset.screen, document.getElementById('status').textContent, document.getElementById('notice').textContent, document.getElementById('waitTitle').textContent, document.querySelectorAll('iframe').length]));
+    throw error;
+  });
   console.log('connection:', await bob.textContent('#mode'));
   await bob.click('#leave');
   await ann.waitForSelector('text=gave up');
@@ -82,7 +110,7 @@ try {
   await bob.waitForFunction(() => document.querySelector('#boardRows tr') || /Nobody/.test(document.getElementById('boardText').textContent));
   console.log('leaderboard:', await bob.textContent('#boardRows'));
   // The games' own checks above cause these, and nothing else may.
-  assert.deepEqual(errors.filter((e) => !/Content Security Policy|connect-src|Failed to load resource|Fetch API|webrtc|access control|Not allowed/i.test(e)), []);
+  assert.deepEqual(errors.filter((e) => !/Content Security Policy|connect-src|frame-src|Unsafe attempt|Refused|Blocked|Failed to load resource|Fetch API|webrtc|access control|Not allowed/i.test(e)), []);
   console.log(`WEB OK (${isWebkit ? 'webkit' : 'chrome'})`);
 } finally {
   await browser.close();

@@ -15,6 +15,8 @@ const BACK = /^[A-Z2-9]{8}\.[0-9a-f-]{36}$/;          // the code of an invite a
 const PUB = /^[0-9a-f]{64}$/;
 const KEY = /^[a-z0-9-]{1,40}@[0-9a-f]{64}$/;         // game@hash: only equal versions meet
 
+const is = (pattern, v) => typeof v === 'string' && pattern.test(v);
+
 /* One home is one address: the first half of an IPv6 address, or the IPv4 address. */
 export function addressKey(ip) {
   const v4 = /^(?:::ffff:)?(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
@@ -106,12 +108,12 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
 
   const actions = {
     create(ws, msg) {
-      if (busy(ws) || !KEY.test(msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
-      if (BACK.test(msg.back)) return returnTo(ws, msg.back);
+      if (busy(ws) || !is(KEY, msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
+      if (is(BACK, msg.back)) return returnTo(ws, msg.back);
       const from = seen(ws.og.address);
       if (from.invites >= L.invitesPerAddress) return tell(ws, { t: 'error', error: 'too_many' });
       from.invites += 1;
-      const code = newCode(), invite = { host: ws, guest: null, key: msg.key, back: `${code}.${randomUUID()}`, address: ws.og.address };
+      const code = newCode(), invite = { host: ws, guest: null, key: msg.key, back: `${code}.${randomUUID()}`, stays: msg.stays === true, address: ws.og.address };
       invite.timer = setTimeout(() => {
         for (const p of [invite.host, invite.guest]) if (p) { p.og.code = null; p.og.visiting = null; tell(p, { t: 'expired' }); }
         closeInvite(code);
@@ -122,7 +124,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       return tell(ws, { t: 'code', code, back: invite.back });
     },
     join(ws, msg) {
-      if (busy(ws) || !KEY.test(msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
+      if (busy(ws) || !is(KEY, msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
       const code = String(msg.code || '').toUpperCase(), invite = open.get(code);
       if (!invite || invite.key !== msg.key || invite.guest) {
         tell(ws, { t: 'error', error: 'no_match' });
@@ -135,7 +137,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       return tell(ws, { t: 'waiting' });
     },
     find(ws, msg) {
-      if (busy(ws) || !KEY.test(msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
+      if (busy(ws) || !is(KEY, msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
       // Nobody may meet everyone who looks for a player. Homes and phones share addresses, so the limit is wide.
       if (seen(ws.og.address).finds >= L.findsPerMinute) return tell(ws, { t: 'error', error: 'too_many' });
       const other = queues.get(msg.key);
@@ -174,13 +176,15 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       let msg;
       try { msg = JSON.parse(raw); } catch { ws.close(1007); return; }
       clearTimeout(ws.og.quiet);
-      if (msg && PUB.test(msg.pub) && !ws.og.pub) ws.og.pub = msg.pub;       // whose ranked match this will be
-      if (msg && Object.hasOwn(actions, msg.t)) actions[msg.t](ws, msg);
+      if (msg && is(PUB, msg.pub) && !ws.og.pub) ws.og.pub = msg.pub;       // whose ranked match this will be
+      if (!msg || !Object.hasOwn(actions, msg.t)) return;
+      // One player's message must never stop the server for the others.
+      try { actions[msg.t](ws, msg); } catch (error) { console.error('A message failed:', error.message); ws.close(1011); }
     });
     ws.on('close', () => {
       clearTimeout(ws.og.quiet);
       const invite = ws.og.code && !ws.og.peer && open.get(ws.og.code);
-      if (invite) { invite.host = null; ws.og.code = null; }
+      if (invite?.stays) { invite.host = null; ws.og.code = null; }   // an app that does not come back loses its invite at once
       stopWaiting(ws);
       const { peer } = ws.og;
       clearTimeout(ws.og.played); clearTimeout(peer?.og.played);

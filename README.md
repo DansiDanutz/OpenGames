@@ -7,7 +7,7 @@ Three games in 3D, with sound: Shikaku, Gemhold, and Avioane & Bărcuțe. There 
 ## Play in a browser or on a phone
 The match server also serves the app at `/play`: the same games, against the same players. It can be installed on a phone or computer (**Install the app**; on an iPhone, Share and *Add to Home Screen*). There is nothing to sign in to: the player's name and key stay in that browser, so they are the same player next time. Another browser or a cleared one is a new player. An invite holds a link that opens the match, and it waits ten minutes even when the phone shows WhatsApp.
 
-A game runs in a sandboxed frame with an origin of its own and no network. Firefox and Safari do not know the rule that blocks WebRTC in pages, so there the block is a script that takes it away from the game's page.
+A game runs in a sandboxed frame with an origin of its own and no network. The tests try to get out of it in Chrome and WebKit: other addresses, the window around it, frames of its own, WebRTC. One thing the rules of browsers leave open is a hint to look up or connect to an address (`dns-prefetch`, `preconnect`); reading every game before it is approved covers that. Firefox is not tested. An invite link only asks; nobody is connected before **Join**.
 
 ## Try it
 ```sh
