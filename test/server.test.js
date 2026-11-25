@@ -236,7 +236,7 @@ test('a friend who leaves makes room for another', () => withServer({}, async (s
   const again = phone(s.port, { t: 'create', back });
   await until(() => again.paired && c.paired);
 }));
-test('nobody takes an invite without its secret, and a held invite ends', () => withServer({ waitMs: 250 }, async (s) => {
+test('nobody takes an invite without its secret, and a held invite ends', () => withServer({ waitMs: 1500 }, async (s) => {
   const a = phone(s.port, { t: 'create' });
   await until(() => a.code);
   const thief = phone(s.port, { t: 'create', back: `${a.code.code}.00000000-0000-4000-8000-000000000000` });
