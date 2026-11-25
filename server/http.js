@@ -1,5 +1,5 @@
 /* Over plain HTTP: GET /leaderboard?game=<id>, POST /result?ticket=<id>, GET /health, and the public pages (site.js). */
-const MAX_RESULT_BYTES = 4 * 1024 * 1024;
+const MAX_RESULT_BYTES = 4 * 1024 * 1024, MAX_ACCOUNT_BYTES = 4096;
 const GAME = /^[a-z0-9-]{1,40}$/;
 
 /* A ticket names one match this server introduced. Only such a match can be ranked. */
@@ -21,13 +21,13 @@ const send = (res, { status, headers, body }) => {
   res.writeHead(status, headers);
   res.end(body);
 };
-async function readBody(req, ms) {
+async function readBody(req, ms, most = MAX_RESULT_BYTES) {
   const parts = [], slow = setTimeout(() => req.destroy(new Error('it arrived too slowly')), ms);
   let bytes = 0;
   try {
     for await (const part of req) {
       bytes += part.length;
-      if (bytes > MAX_RESULT_BYTES) return null;
+      if (bytes > most) return null;
       parts.push(part);
     }
   } finally { clearTimeout(slow); }
@@ -58,13 +58,25 @@ async function takeResult({ req, res, url, from, limits, tickets, leaderboard })
     done();
   }
 }
+async function takeAccount({ req, res, action, from, limits, accounts }) {
+  if (++from.accounts > limits.accountsPerMinute) return reply(res, 429, { error: 'too_many' });
+  const text = await readBody(req, limits.bodyMs, MAX_ACCOUNT_BYTES);
+  if (text === null) return reply(res, 413, { error: 'too_large' });
+  let body;
+  try { body = JSON.parse(text); } catch { return reply(res, 400, { error: 'bad_request' }); }
+  const out = await accounts.ask(action, body);
+  return reply(res, out.status, out.body);
+}
 export function answerHttp(context) {
-  const { req, res, from, limits, leaderboard, site } = context;
+  const { req, res, from, limits, leaderboard, site, accounts } = context;
   if (!URL.canParse(req.url, 'http://server')) return reply(res, 400, { error: 'bad_request' });
   const url = new URL(req.url, 'http://server');
   const fail = (error) => { console.error('A request failed:', error.message); reply(res, 500, { error: 'failed' }); };
   req.on('error', () => res.destroy());
   if (req.method === 'GET' && url.pathname === '/health') return reply(res, 200, { ok: true });
+  if (req.method === 'GET' && url.pathname === '/account') return reply(res, 200, { on: !!accounts });
+  const action = accounts && req.method === 'POST' && /^\/account\/([a-z]{1,20})$/.exec(url.pathname)?.[1];
+  if (action && accounts.has(action)) return takeAccount({ ...context, action }).catch(fail);
   if (site && req.method === 'GET') {
     try {
       if (site.has(url.pathname)) return ++from.pages > limits.pagesPerMinute ? reply(res, 429, { error: 'too_many' }) : send(res, site(url.pathname, req.headers));

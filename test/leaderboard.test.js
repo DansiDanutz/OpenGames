@@ -50,6 +50,28 @@ test('only a match that both players agreed to rank, with the ticket of this ser
   for (const bad of [null, {}, { ...transcript, players: [] }, { ...transcript, entries: 1 }, { ...transcript, hash: 'b'.repeat(64) }, { ...transcript, terms: { ...transcript.terms, rounds: 2 } }]) assert.equal((await send(bad)).ok, false);
   assert.deepEqual(b.top('shikaku'), []);
 });
+test('an account has the points of all its devices, and cannot play itself', async () => {
+  const [a, b, phone] = [...await two(), await createIdentity()], account = 'ab'.repeat(32);
+  let mine = [];
+  const real = createLeaderboard({ file: ':memory:', library, owner: (pub) => (mine.includes(pub) ? account : pub) });
+  const send = (transcript, ticket) => real.submit({ transcript, ticket, key: KEY, pubs: transcript.players.map((p) => p.pub) });
+  await send(await played({ identities: [a, b] }), TICKETS[0]);            // before signing in
+  mine = [b.pub];
+  real.move({ from: b.pub, to: account });
+  mine = [b.pub, phone.pub];
+  await send(await played({ identities: [a, phone], ticket: TICKETS[1] }), TICKETS[1]);
+  assert.deepEqual(real.top('shikaku').map((p) => [p.pub === account, p.wins, p.losses]), [[true, 2, 0], [false, 0, 2]]);
+  const self = await send(await played({ identities: [b, phone], ticket: TICKETS[2] }), TICKETS[2]);
+  assert.match(self.error, /same person/);
+  real.remove(account);
+  assert.deepEqual(real.top('shikaku').map((p) => p.pub), [a.pub]);
+});
+test('points an account already has are not replaced', async () => {
+  const [a, b] = await two(), c = board(), transcript = await played({ identities: [a, b] });
+  await c.submit({ transcript, ticket: TICKETS[0], key: KEY });
+  c.move({ from: a.pub, to: b.pub });
+  assert.equal(c.top('shikaku').length, 2);
+});
 test('a changed match is refused by the referee', async () => {
   const b = board(), transcript = await played({ identities: await two() });
   for (const change of [(t) => t.players.reverse(), (t) => { t.players[0].name = 'Eve'; }, (t) => { t.entries.at(-1).player = 0; }, (t) => { t.entries[0].move.move.cells = 9; }, (t) => { t.seed = 'f'.repeat(64); }]) {

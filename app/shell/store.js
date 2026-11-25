@@ -12,6 +12,11 @@ export const settings = {
   get sound() { return read('sound', true); },
   set sound(v) { write('sound', !!v); },
 };
+/* { id, email } of the account this device is signed in to, or null. */
+export const account = {
+  get value() { return read('account', null); },
+  set value(v) { if (v) write('account', v); else localStorage.removeItem('account'); },
+};
 /* The last rules a player chose for a game. */
 export const lastTerms = (gameId) => read(`terms:${gameId}`, {});
 export const saveTerms = (gameId, terms) => write(`terms:${gameId}`, terms);

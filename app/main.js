@@ -163,6 +163,14 @@ shellCall('leaderboard', (game) => {
   if (!games.some((g) => g.id === game)) throw new Error('unknown game');
   return ask(`/leaderboard?game=${game}`);
 });
+shellCall('account:on', async () => (await ask('/account')).on === true);
+const ACCOUNT_ACTIONS = ['start', 'finish', 'me', 'name', 'leave', 'remove'], MAX_ACCOUNT = 4096;
+shellCall('account', async ({ action, body } = {}) => {
+  const text = JSON.stringify(body) ?? '';
+  if (!ACCOUNT_ACTIONS.includes(action) || text.length > MAX_ACCOUNT) throw new Error('bad request');
+  const res = await net.fetch(`${HTTP}/account/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: text, signal: AbortSignal.timeout(RESULT_MS), credentials: 'omit', redirect: 'error', bypassCustomProtocolHandlers: true });
+  return { ok: res.ok, body: await res.json() };
+});
 shellCall('result', (transcript) => {
   const ticket = transcript?.terms?.ticket, body = JSON.stringify(transcript);
   if (!/^[0-9a-f-]{36}$/.test(ticket ?? '') || body.length > MAX_RESULT) throw new Error('not a ranked match');

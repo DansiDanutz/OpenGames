@@ -9,7 +9,7 @@
 <body data-screen="library">
 <header class="top">
   <p class="mark">Open<b>Games</b></p>
-  <div class="right"><button id="sound" type="button" aria-pressed="true">Sound on</button>
+  <div class="right"><button id="account" type="button" hidden>Sign in</button><button id="sound" type="button" aria-pressed="true">Sound on</button>
   <form id="nameForm" class="name"><label for="name">Your name</label><input id="name" maxlength="24" autocomplete="off" spellcheck="false"></form></div>
 </header>
 
@@ -60,6 +60,19 @@
     <table id="boardTable"><thead><tr><th scope="col">Place</th><th scope="col">Player</th><th scope="col">Points</th><th scope="col">Won</th><th scope="col">Lost</th><th scope="col">Drawn</th></tr></thead><tbody id="boardRows"></tbody></table>
     <p class="small">Everyone starts at 1200 points. Beating a stronger player is worth more. Players who leave more than one match in five are not shown.</p>
     <div class="row"><button type="button" id="boardBack">Back to games</button></div>
+  </div>
+</main>
+
+<main id="signin" hidden>
+  <div class="sheet">
+    <h1 id="signinTitle" tabindex="-1">Account</h1>
+    <p id="signinText"></p>
+    <form id="step-email"><label for="emailInput">Your email</label><input id="emailInput" type="email" autocomplete="email" maxlength="200" required><button class="go">Send me a code</button>
+      <p class="small">We keep your email address and your name, only for this. No passwords, no newsletters. <span id="privacyAt"></span></p></form>
+    <form id="step-code" hidden><label for="codeInput">Code</label><input id="codeInput" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required><button class="go">Sign in</button><button type="button" id="codeAgain">Another address</button></form>
+    <div id="step-in" hidden><div class="row"><button type="button" id="accountLeave">Sign out</button><button type="button" id="accountRemove">Delete my account</button></div></div>
+    <p id="signinNote" role="status"></p>
+    <div class="row"><button type="button" id="signinBack">Back to games</button></div>
   </div>
 </main>
 

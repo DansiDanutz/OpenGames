@@ -2,7 +2,8 @@ import { Session, cleanName } from './session.js';
 import { Solo } from './solo.js';
 import { createTable } from './table.js';
 import { meet, link } from './wire.js';
-import { settings, identity, record, soloKey, addResult, lastTerms, saveTerms } from './store.js';
+import { createAccount } from './account.js';
+import { account, settings, identity, record, soloKey, addResult, lastTerms, saveTerms } from './store.js';
 import { describe, drawChoices, readChoices, drawTerms, drawLeaderboard } from './rules.js';
 
 const $ = (id) => document.getElementById(id);
@@ -14,7 +15,8 @@ const TEXT = {
   too_many: 'You met many players in a short time. Please wait a minute and try again.',
   bad_request: 'The match server did not accept that. Please try again.',
 };
-const SCREENS = ['library', 'setup', 'terms', 'board', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000;
+const SCREENS = ['library', 'setup', 'terms', 'board', 'signin', 'invited', 'wait', 'match'], IDLE_MS = 3 * 60 * 1000;
+let signedIn = null;
 let server = '', stun = null, library = [], current = null;      // current: { game, meeting, session, table, over }
 
 function screen(name) {
@@ -142,7 +144,7 @@ async function showLeaderboard(game) {
     if ($('boardTitle').textContent !== `${game.name} leaderboard`) return;
     $('boardText').textContent = players.length ? '' : 'Nobody has finished a ranked match yet.';
     $('boardTable').hidden = !players.length;
-    drawLeaderboard($('boardRows'), players, me.pub);
+    drawLeaderboard($('boardRows'), players, account.value?.id ?? me.pub);
   } catch {
     $('boardText').textContent = 'The leaderboard cannot be reached. Check your internet connection and try again.';
   }
@@ -269,7 +271,7 @@ $('leave').onclick = () => {
 };
 $('cancel').onclick = () => leave();
 $('nameForm').onsubmit = (e) => { e.preventDefault(); $('name').blur(); };
-$('name').onchange = () => { settings.name = $('name').value; $('name').value = settings.name; };
+$('name').onchange = () => { settings.name = $('name').value; $('name').value = settings.name; signedIn?.rename(settings.name); };
 $('hide').onchange = () => { settings.hideAddress = $('hide').checked; };
 addEventListener('resize', placeGame);
 new ResizeObserver(placeGame).observe($('stage'));
@@ -284,6 +286,16 @@ $('sound').onclick = () => { settings.sound = !settings.sound; drawSound(); curr
 drawSound();
 ({ server, stun, games: library } = await desk.games());
 drawLibrary();
+/* Optional, and only where the server offers it. */
+desk.accountOn().then((on) => {
+  if (!on) return undefined;
+  const { host } = new URL(server);
+  $('privacyAt').textContent = `More: https://${host}/privacy`;
+  signedIn = createAccount({ desk, host, changed: () => { $('name').value = settings.name; }, close: () => screen('library') });
+  $('account').onclick = () => { if (current) return; signedIn.draw(); screen('signin'); $('signinTitle').focus(); };
+  $('account').hidden = false;
+  return signedIn.refresh();
+}).catch(() => {});                                      // without the server there is nothing to sign in to
 /* A link from an invite: #<game>=<code>. */
 const invited = /^#([a-z0-9-]{1,40})=([A-HJ-NP-Z2-9]{8})$/.exec(location.hash), invitedTo = invited && library.find((g) => g.id === invited[1]);
 if (invited) history.replaceState(null, '', location.pathname);

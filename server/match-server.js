@@ -9,7 +9,7 @@ import { createTickets, answerHttp } from './http.js';
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LIMITS = { maxBytes: 26 * 1024, perSecond: 80, bytesPerSecond: 64 * 1024, buffered: 256 * 1024, perAddress: 20, opensPerMinute: 60,
   waitMs: 10 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, invitesPerAddress: 20, pingMs: 30 * 1000, minuteMs: 60 * 1000,
-  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, pagesPerMinute: 600, findsPerMinute: 30, bodyMs: 25_000, playedMs: 60 * 1000 };
+  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120, pagesPerMinute: 600, accountsPerMinute: 20, findsPerMinute: 30, bodyMs: 25_000, playedMs: 60 * 1000 };
 const CODE_LENGTH = 8;
 const BACK = /^[A-Z2-9]{8}\.[0-9a-f-]{36}$/;          // the code of an invite and its secret
 const PUB = /^[0-9a-f]{64}$/;
@@ -28,7 +28,7 @@ export function addressKey(ip) {
 }
 
 /* proxies: how many trusted proxies stand in front of this server. */
-export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, limits = {}, leaderboard = null, stats = null, site = null } = {}) {
+export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, limits = {}, leaderboard = null, stats = null, site = null, accounts = null } = {}) {
   const L = { ...LIMITS, ...limits };
   const open = new Map();                              // code -> { host, guest, key, back, address, timer }: an invite
   const queues = new Map();                            // game@hash -> waiting player
@@ -45,8 +45,8 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   const addressOf = (req) => addressKey((proxies > 0 && String(req.headers['x-forwarded-for'] || '').split(',').at(-proxies)?.trim()) || req.socket.remoteAddress);
   const seen = (address) => {
     const now = Date.now(), old = addresses.get(address);
-    const a = old ?? { count: 0, invites: 0, opens: 0, tries: 0, results: 0, reads: 0, pages: 0, finds: 0, since: now };
-    if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, results: 0, reads: 0, pages: 0, finds: 0, since: now });
+    const a = old ?? { count: 0, invites: 0, opens: 0, tries: 0, results: 0, reads: 0, pages: 0, accounts: 0, finds: 0, since: now };
+    if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, results: 0, reads: 0, pages: 0, accounts: 0, finds: 0, since: now });
     addresses.set(address, a);
     return a;
   };
@@ -192,7 +192,7 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       from.count--;
     });
   });
-  http.on('request', (req, res) => answerHttp({ req, res, from: seen(addressOf(req)), limits: L, tickets, leaderboard, site }));
+  http.on('request', (req, res) => answerHttp({ req, res, from: seen(addressOf(req)), limits: L, tickets, leaderboard, site, accounts }));
   const ping = setInterval(() => {
     tickets.sweep();
     for (const [key, a] of addresses) if (!a.count && !a.invites && Date.now() - a.since > L.minuteMs) addresses.delete(key);

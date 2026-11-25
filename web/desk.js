@@ -58,6 +58,11 @@ globalThis.desk = {
   },
   async toGame(mine, msg) { if (frame && mine === token) frame.contentWindow.postMessage(msg, '*'); },
   submitResult: (transcript) => ask(`/result?ticket=${encodeURIComponent(transcript.terms.ticket)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(transcript) }, 60_000),
+  accountOn: async () => (await ask('/account')).on === true,
+  async account(action, body) {
+    const res = await fetch(`/account/${encodeURIComponent(action)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000), credentials: 'omit', redirect: 'error' });
+    return { ok: res.ok, body: await res.json() };
+  },
   leaderboard: (id) => ask(`/leaderboard?game=${find(id).id}`),
   async openLink(id, kind) {
     const game = find(id), url = kind === 'support' ? game.support : game.sponsor?.url;

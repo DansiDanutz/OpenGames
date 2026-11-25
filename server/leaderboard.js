@@ -24,8 +24,8 @@ function askReferee(transcript, rules, ms) {
   });
 }
 
-/* library: [{ id, hash, options, rulesPath }], the approved games. */
-export function createLeaderboard({ file, library, limits = {}, referee = askReferee }) {
+/* library: [{ id, hash, options, rulesPath }], the approved games. owner: whose key this is (accounts.js). */
+export function createLeaderboard({ file, library, limits = {}, referee = askReferee, owner = (pub) => pub }) {
   const L = { ...LIMITS, ...limits };
   const db = new DatabaseSync(file);
   db.exec(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 3000;
@@ -41,6 +41,10 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     match: db.prepare('SELECT finished FROM matches WHERE ticket = ?'),
     save: db.prepare('INSERT INTO matches (ticket, game, a, b, finished, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (ticket) DO UPDATE SET finished = excluded.finished, at = excluded.at'),
     recent: db.prepare('SELECT count(*) AS n FROM matches WHERE game = ? AND a = ? AND b = ? AND finished = 1 AND at > ?'),
+    move: db.prepare('UPDATE players SET pub = ? WHERE pub = ? AND game NOT IN (SELECT game FROM players WHERE pub = ?)'),
+    forget: db.prepare('DELETE FROM players WHERE pub = ?'),
+    forgetA: db.prepare("UPDATE matches SET a = '' WHERE a = ?"),
+    forgetB: db.prepare("UPDATE matches SET b = '' WHERE b = ?"),
     players: db.prepare('SELECT count(*) AS n FROM players WHERE game = ? AND wins + losses + draws > 0'),
     top: db.prepare(`SELECT pub, name, rating, wins, losses, draws, unfinished FROM players WHERE game = ? AND wins + losses + draws > 0
       AND (wins + losses + draws + unfinished < ? OR wins + losses + draws >= ? * (wins + losses + draws + unfinished)) ORDER BY rating DESC, wins DESC, pub LIMIT ?`),
@@ -53,12 +57,13 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
     if (!game || `${game.id}@${game.hash}` !== key) return 'not a game of this server';
     if (!Array.isArray(t.players) || t.players.length !== 2 || !t.players.every((p) => isHex64(p?.pub) && cleanName(p.name) === p.name) || t.players[0].pub === t.players[1].pub) return 'not two players';
     if (pubs?.length !== 2 || !t.players.every((p) => pubs.includes(p.pub))) return 'not the players this server introduced';
+    if (owner(t.players[0].pub) === owner(t.players[1].pub)) return 'both players are the same person';
     if (!isHex64(t.seed) || !isHex64(t.match) || !Array.isArray(t.entries) || t.entries.length > MAX_ENTRIES) return 'not a match';
     try { if (canonical(cleanTerms(game.options, t.terms)) !== canonical(t.terms)) return 'the rules are not well formed'; } catch { return 'the rules are not well formed'; }
     return t.terms.ranked && t.terms.ticket === ticket ? '' : 'the players did not agree on a ranked match';
   }
   function write(t, ticket, result) {
-    const [a, b] = t.players, before = q.match.get(ticket);
+    const [a, b] = t.players.map((p) => ({ name: p.name, pub: owner(p.pub) })), before = q.match.get(ticket);
     if (before?.finished || (before && !result)) return { ok: true, finished: !!before.finished, counted: false };
     const [x, y] = [a.pub, b.pub].sort(), now = Date.now();
     const isOften = !!result && q.recent.get(t.game, x, y, now - DAY_MS).n >= L.perPairPerDay;
@@ -99,6 +104,14 @@ export function createLeaderboard({ file, library, limits = {}, referee = askRef
       return out;
     },
     top: (game) => q.top.all(game, L.newPlayer, L.minFinished, L.top).map((p) => ({ ...p })),
+    /* A device that signs in brings its points where the account has none yet. */
+    move({ from, to }) { q.move.run(to, from, to); },
+    /* Removes a person. The other players keep their results. */
+    remove(id) {
+      q.forget.run(id);
+      q.forgetA.run(id);
+      q.forgetB.run(id);
+    },
     players: (game) => q.players.get(game).n,
     close: () => db.close(),
   };
