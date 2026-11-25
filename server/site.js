@@ -24,7 +24,7 @@ function page(title, about, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title>
 <meta name="description" content="${escape(about)}"><meta property="og:title" content="${escape(title)}"><meta property="og:description" content="${escape(about)}"><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/site.css"></head>
 <body><header><a class="mark" href="/">Open<b>Games</b></a><nav aria-label="Main"><a href="/play">Play</a><a href="/">Games</a><a href="/creators">Creators</a>${out(SOURCE, 'Source code')}</nav></header><main>${body}</main>
-<footer>Open-source games for two players. No accounts, no payments, nothing of value to win.</footer></body></html>`;
+<footer>Open-source games for two players. No payments, nothing of value to win.</footer></body></html>`;
 }
 
 /* One bar per day. A day before counting began has no bar; a day without a match has a line on the ground. */
