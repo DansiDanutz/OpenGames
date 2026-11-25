@@ -1,12 +1,16 @@
-/* Finds two players and introduces their computers. It knows no names, keeps no
-   accounts and stores nothing. When the computers cannot reach each other
+/* Finds two players and introduces their computers. Matchmaking keeps no accounts
+   and stores nothing; only ranked results are kept (leaderboard.js). When the computers cannot reach each other
    directly, it passes their messages on. */
 import { WebSocketServer } from 'ws';
-import { randomInt } from 'node:crypto';
+import { createServer } from 'node:http';
+import { randomInt, randomUUID } from 'node:crypto';
+import { createTickets, answerHttp } from './http.js';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LIMITS = { maxBytes: 26 * 1024, perSecond: 80, bytesPerSecond: 64 * 1024, buffered: 256 * 1024, perAddress: 20, opensPerMinute: 60,
-  waitMs: 10 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, pingMs: 30 * 1000, minuteMs: 60 * 1000 };
+  waitMs: 10 * 60 * 1000, pairMs: 4 * 60 * 60 * 1000, joinTries: 10, pingMs: 30 * 1000, minuteMs: 60 * 1000,
+  quietMs: 20 * 1000, resultsPerMinute: 10, readsPerMinute: 120 };
+const CODE_LENGTH = 8;
 const KEY = /^[a-z0-9-]{1,40}@[0-9a-f]{64}$/;         // game@hash: only equal versions meet
 
 /* One home is one address: the first half of an IPv6 address, or the IPv4 address. */
@@ -20,12 +24,14 @@ export function addressKey(ip) {
 }
 
 /* proxies: how many trusted proxies stand in front of this server. */
-export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, limits = {} } = {}) {
+export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, limits = {}, leaderboard = null } = {}) {
   const L = { ...LIMITS, ...limits };
   const open = new Map();                              // code -> waiting player
   const queues = new Map();                            // game@hash -> waiting player
   const addresses = new Map();
-  const wss = new WebSocketServer({ port, host, maxPayload: L.maxBytes, perMessageDeflate: false });
+  const tickets = createTickets(L.pairMs * 2);
+  const http = createServer({ headersTimeout: 10_000, requestTimeout: 30_000 });
+  const wss = new WebSocketServer({ server: http, maxPayload: L.maxBytes, perMessageDeflate: false });
   // A player who does not read is cut off before the waiting messages fill the memory.
   const tell = (ws, msg) => {
     if (ws.readyState !== ws.OPEN) return;
@@ -35,15 +41,15 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   const addressOf = (req) => addressKey((proxies > 0 && String(req.headers['x-forwarded-for'] || '').split(',').at(-proxies)?.trim()) || req.socket.remoteAddress);
   const seen = (address) => {
     const now = Date.now(), old = addresses.get(address);
-    const a = old ?? { count: 0, opens: 0, tries: 0, since: now };
-    if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, since: now });
+    const a = old ?? { count: 0, opens: 0, tries: 0, results: 0, reads: 0, since: now };
+    if (now - a.since > L.minuteMs) Object.assign(a, { opens: 0, tries: 0, results: 0, reads: 0, since: now });
     addresses.set(address, a);
     return a;
   };
 
   function newCode() {
     for (;;) {
-      const code = Array.from({ length: 6 }, () => LETTERS[randomInt(LETTERS.length)]).join('');
+      const code = Array.from({ length: CODE_LENGTH }, () => LETTERS[randomInt(LETTERS.length)]).join('');
       if (!open.has(code)) return code;
     }
   }
@@ -57,14 +63,16 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     ws.og.timer = setTimeout(() => { stopWaiting(ws); tell(ws, { t: 'expired' }); }, L.waitMs);
     ws.og.timer.unref();
   }
-  function pair(host, guest) {
+  function pair(host, guest, key) {
     stopWaiting(host); stopWaiting(guest);
+    const ticket = randomUUID(), canRank = !!leaderboard && (L.rankSameAddress || host.og.address !== guest.og.address);
+    if (canRank) tickets.add(ticket, key);
     host.og.peer = guest; guest.og.peer = host;
     const timer = setTimeout(() => { host.terminate(); guest.terminate(); }, L.pairMs);
     timer.unref();
     host.og.timer = guest.og.timer = timer;
-    tell(host, { t: 'paired', host: true });
-    tell(guest, { t: 'paired', host: false });
+    tell(host, { t: 'paired', host: true, ticket: canRank ? ticket : null });
+    tell(guest, { t: 'paired', host: false, ticket: canRank ? ticket : null });
   }
   const busy = (ws) => ws.og.peer || ws.og.code || ws.og.queue;
 
@@ -79,20 +87,20 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       if (busy(ws) || !KEY.test(msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
       const host = open.get(String(msg.code || '').toUpperCase());
       if (!host || host === ws || host.og.key !== msg.key) {
-        tell(ws, { t: 'error', error: host && host !== ws ? 'other_version' : 'no_match' });
+        tell(ws, { t: 'error', error: 'no_match' });
         if (++seen(ws.og.address).tries >= L.joinTries) ws.close(1008);
         return undefined;
       }
-      return pair(host, ws);
+      return pair(host, ws, msg.key);
     },
     find(ws, msg) {
       if (busy(ws) || !KEY.test(msg.key)) return tell(ws, { t: 'error', error: 'bad_request' });
       const other = queues.get(msg.key);
-      if (other) return pair(other, ws);
+      if (other) return pair(other, ws, msg.key);
       ws.og.queue = msg.key; queues.set(msg.key, ws); wait(ws);
       return tell(ws, { t: 'searching' });
     },
-    leave: (ws) => stopWaiting(ws),
+    leave: (ws) => { if (!ws.og.peer) stopWaiting(ws); },   // the pair's own time limit stays
     signal: (ws, msg) => ws.og.peer && tell(ws.og.peer, { t: 'signal', data: msg.data }),
     relay: (ws, msg) => ws.og.peer && tell(ws.og.peer, { t: 'relay', data: msg.data }),
   };
@@ -103,6 +111,8 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
     if (from.count >= L.perAddress || ++from.opens > L.opensPerMinute || from.tries >= L.joinTries) { ws.terminate(); return; }
     from.count++;
     ws.og = { address, peer: null, code: null, queue: null, key: null, timer: null, alive: true };
+    ws.og.quiet = setTimeout(() => ws.terminate(), L.quietMs);   // somebody who only connects is not a player
+    ws.og.quiet.unref();
     let second = 0, used = 0, bytes = 0;
     ws.on('pong', () => { ws.og.alive = true; });
     ws.on('message', (raw, binary) => {
@@ -112,16 +122,20 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
       if (binary || ++used > L.perSecond || bytes > L.bytesPerSecond) { ws.close(1008); return; }
       let msg;
       try { msg = JSON.parse(raw); } catch { ws.close(1007); return; }
+      clearTimeout(ws.og.quiet);
       if (msg && Object.hasOwn(actions, msg.t)) actions[msg.t](ws, msg);
     });
     ws.on('close', () => {
+      clearTimeout(ws.og.quiet);
       stopWaiting(ws);
       const { peer } = ws.og;
       if (peer) { peer.og.peer = null; ws.og.peer = null; tell(peer, { t: 'gone' }); }
       from.count--;
     });
   });
+  http.on('request', (req, res) => answerHttp({ req, res, from: seen(addressOf(req)), limits: L, tickets, leaderboard }));
   const ping = setInterval(() => {
+    tickets.sweep();
     for (const [key, a] of addresses) if (!a.count && Date.now() - a.since > L.minuteMs) addresses.delete(key);
     wss.clients.forEach((ws) => {
       if (!ws.og) return;
@@ -132,11 +146,12 @@ export function startMatchServer({ port = 0, host = '127.0.0.1', proxies = 0, li
   ping.unref();
 
   return new Promise((resolve, reject) => {
-    wss.on('error', reject);                             // only before it listens; later errors are per player
-    wss.once('listening', () => resolve({
-      port: wss.address().port,
+    wss.on('error', () => {});                           // the same errors as the server below
+    http.once('error', reject);                          // only before it listens; later errors are per player
+    http.listen(port, host, () => resolve({
+      port: http.address().port,
       counts: () => ({ open: open.size, queues: queues.size, clients: wss.clients.size, addresses: [...addresses.values()].filter((a) => a.count).length }),
-      close: () => new Promise((done) => { clearInterval(ping); wss.clients.forEach((c) => c.terminate()); wss.close(done); }),
+      close: () => new Promise((done) => { clearInterval(ping); wss.clients.forEach((c) => c.terminate()); wss.close(); http.close(done); http.closeAllConnections(); }),
     }));
   });
 }

@@ -17,7 +17,7 @@ const withServer = async (limits, run) => { const s = await startMatchServer({ l
 test('a code joins two friends, and each code works once', () => withServer({}, async (s) => {
   const a = client(s.port, { t: 'create' });
   await until(() => a.code);
-  assert.match(a.code.code, /^[A-HJ-NP-Z2-9]{6}$/);
+  assert.match(a.code.code, /^[A-HJ-NP-Z2-9]{8}$/);
   const b = client(s.port, { t: 'join', code: a.code.code.toLowerCase() });
   await until(() => a.paired && b.paired);
   assert.deepEqual([a.paired.host, b.paired.host], [true, false]);
@@ -35,7 +35,7 @@ test('finding a player pairs equal versions only', () => withServer({}, async (s
   await until(() => code.code);
   const wrong = client(s.port, { t: 'join', code: code.code.code }, OTHER);
   await until(() => wrong.error);
-  assert.equal(wrong.error.error, 'other_version');
+  assert.equal(wrong.error.error, 'no_match');
 }));
 test('leaving frees the code and the queue, and nothing is kept', () => withServer({}, async (s) => {
   const a = client(s.port, { t: 'create' }), b = client(s.port, { t: 'find' });

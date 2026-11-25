@@ -9,7 +9,13 @@ export const settings = {
   set name(v) { write('name', cleanName(v)); },
   get hideAddress() { return read('hideAddress', false); },
   set hideAddress(v) { write('hideAddress', !!v); },
+  get sound() { return read('sound', true); },
+  set sound(v) { write('sound', !!v); },
 };
+/* The last rules a player chose for a game. */
+export const lastTerms = (gameId) => read(`terms:${gameId}`, {});
+export const saveTerms = (gameId, terms) => write(`terms:${gameId}`, terms);
+
 export function record(gameId) { return read(`record:${gameId}`, { wins: 0, losses: 0, draws: 0 }); }
 export function addResult(gameId, outcome) {
   const r = record(gameId);

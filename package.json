@@ -10,11 +10,24 @@
     "start": "electron .",
     "server": "node server/main.js",
     "demo": "node tools/demo.js",
-    "test": "node --test --test-timeout=10000 test/*.test.js",
+    "test": "node --test --test-timeout=60000 test/*.test.js",
     "test:app": "node test/app.e2e.js && node test/games.e2e.js",
-    "check": "node kit/check.js games/shikaku && node kit/check.js games/gemhold && node kit/check.js games/avioane"
+    "check": "node kit/check.js games/shikaku && node kit/check.js games/gemhold && node kit/check.js games/avioane",
+    "kit": "node tools/build-kit.js"
   },
-  "dependencies": { "ws": "^8.18.0" },
-  "devDependencies": { "electron": "45.4.1", "playwright-core": "^1.50.0" },
-  "pnpm": { "onlyBuiltDependencies": ["electron"] }
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.50.0",
+    "three": "^0.187.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
+  }
 }

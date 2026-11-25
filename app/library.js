@@ -24,16 +24,21 @@ export function listFiles(dir) {
   walk(dir, '');
   return out.sort();
 }
-export function hashGame(dir) {
+/* Every file of a folder, read once. What is hashed is what is served. */
+export function readFiles(dir) {
   let bytes = 0;
-  const lines = listFiles(dir).map((f) => {
+  return new Map(listFiles(dir).map((f) => {
     const data = fs.readFileSync(path.join(dir, f));
     bytes += data.length;
     if (bytes > MAX_BYTES) throw new Error('the game is too large');
-    return `${f}\0${sha256(data)}`;
-  });
-  return sha256(lines.join('\n'));
+    return [f, data];
+  }));
 }
+const hashFiles = (files) => sha256([...files].map(([f, data]) => `${f}\0${sha256(data)}`).join('\n'));
+export const hashGame = (dir) => hashFiles(readFiles(dir));
+const isOption = (o, text) => /^[a-z]{1,20}$/.test(o?.id ?? '') && text(o.label, 30) && Array.isArray(o.choices) && o.choices.length > 1 && o.choices.length <= 8
+  && o.choices.every((c) => /^[a-z0-9]{1,20}$/.test(c?.id ?? '') && text(c.label, 30) && (c.note === undefined || text(c.note, 120)))
+  && new Set(o.choices.map((c) => c.id)).size === o.choices.length && o.choices.some((c) => c.id === o.default);
 export function readManifest(dir) {
   const m = JSON.parse(fs.readFileSync(path.join(dir, 'game.json'), 'utf8'));
   const text = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
@@ -45,6 +50,8 @@ export function readManifest(dir) {
     [text(m.license, 40), 'license is missing'],
     [text(m.summary, 160), 'summary is missing or longer than 160 characters'],
     [m.players?.min === 2 && m.players?.max === 2, 'every game must be for two players'],
+    [Array.isArray(m.howto) && m.howto.length > 0 && m.howto.length <= 8 && m.howto.every((x) => text(x, 240)), 'howto must be 1 to 8 short rules'],
+    [(m.options ?? []).length <= 4 && (m.options ?? []).every((o) => isOption(o, text)) && new Set((m.options ?? []).map((o) => o.id)).size === (m.options ?? []).length, 'options are not well formed'],
     [Number.isInteger(m.minutes) && m.minutes > 0 && m.minutes <= 240, 'minutes must be a whole number'],
     [/^[\w-]+\.html$/.test(m.page ?? '') && fs.existsSync(path.join(dir, m.page)), 'page is missing'],
     [/^[\w-]+\.(svg|png|webp)$/.test(m.icon ?? '') && fs.existsSync(path.join(dir, m.icon)), 'icon is missing (svg, png or webp)'],
@@ -53,20 +60,29 @@ export function readManifest(dir) {
   if (problems.length) throw new Error(problems.join('; '));
   return m;
 }
-/* Two computers only meet when the game and the shared kit are the same. */
-export function readLibrary(root, kit) {
-  const shared = ['engine.js', 'ui.js'].map((f) => sha256(fs.readFileSync(path.join(kit, f)))).join('|');
+/* Two computers only meet when the game and the shared kit are the same. `approved` (id -> hash of the
+   game's files) names the only games that may be played; without it every game in the folder is listed. */
+export function readLibrary(root, kit, approved = null) {
+  const shared = readKit(kit);
   return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((e) => {
     const dir = path.join(root, e.name);
     try {
-      const { id, name, version, author, license, summary, minutes, page, icon } = readManifest(dir);
+      const files = readFiles(dir), own = hashFiles(files);
+      if (approved && approved[e.name] !== own) throw new Error('this version was not approved');
+      const { id, name, version, author, license, summary, minutes, page, icon, rules, howto, options = [] } = readManifest(dir);
       if (id !== e.name) throw new Error('the folder must have the same name as the id');
-      return [{ id, name, version, author, license, summary, minutes, page, icon, hash: sha256(`${hashGame(dir)}|${shared}`), dir }];
+      return [{ id, name, version, author, license, summary, minutes, howto, options, page, icon, rules, hash: sha256(`${own}|${shared.hash}`), dir, files }];
     } catch (error) {
       console.error(`The game in ${e.name} was left out: ${error.message}`);
       return [];
     }
   });
+}
+/* The part of the kit that game pages run. */
+const PAGE_KIT = ['board3d.js', 'engine.js', 'sound.js', 'table.css', 'three.js', 'ui.js'];
+export function readKit(kit) {
+  const files = new Map(PAGE_KIT.map((f) => [f, fs.readFileSync(path.join(kit, f))]));
+  return { files, hash: hashFiles(files) };
 }
 /* The file behind a URL path, or null. It can never be outside `root`. */
 export function resolveFile(root, urlPath) {

@@ -54,7 +54,7 @@ test('a game page that is silent or lies is not believed', async () => {
   await assert.rejects(reply({ ok: true, fingerprint: 'x' }), /bad answer/);
   await assert.rejects(reply({ ok: true, fingerprint: 'a'.repeat(16), result: { winner: 5 } }), /does not understand/);
   assert.deepEqual(await reply({ ok: 'yes' }), { ok: false, error: 'not allowed' });
-  assert.deepEqual(cleanResult({ winner: 1, reason: 9, extra: 1 }), { winner: 1, reason: '' });
+  assert.deepEqual(cleanResult({ winner: 1, reason: 9, extra: 1 }), { winner: 1, reason: '', score: [0, 0] });
 });
 test('changing the shared kit changes the version players must share', (t) => {
   const kit = fs.mkdtempSync(path.join(os.tmpdir(), 'og-kit-'));

@@ -9,13 +9,13 @@
 <body class="place">
 <p id="whose">Hide your fleet</p>
 <div class="boards">
-  <section class="big" id="their"><h2>Other player</h2>
-    <div class="frame"><div class="board" id="theirs" role="application" tabindex="0" aria-label="The other player's board. Move with the arrow keys and press Space to shoot."></div></div>
-    <ul class="left" id="left" aria-label="Their fleet"></ul></section>
+  <section class="big" id="their"><h2 id="theirTitle">Other player</h2>
+    <div class="board" id="theirs" role="application" tabindex="0" aria-label="The other player's board. Move with the arrow keys and press Space to shoot."></div></section>
   <section class="small"><h2 id="mineTitle">Your fleet</h2>
-    <div class="frame"><div class="board" id="mine" role="application" tabindex="0" aria-label="Your board. Press N for the next piece, the arrow keys to move it and R to turn it."></div></div></section>
+    <div class="board" id="mine" role="application" tabindex="0" aria-label="Your board. Press N for the next piece, the arrow keys to move it and R to turn it."></div></section>
 </div>
-<div class="tools" id="tools"><button id="mix" type="button">Shuffle</button><button id="turn" type="button">Turn</button><button id="go" type="button">Ready</button></div>
+<ul class="left" id="left" aria-label="Their fleet"></ul>
+<div class="tools" id="tools"><button id="mix" type="button">Shuffle</button><button id="turn" type="button">Turn</button><button id="go" class="main" type="button">Ready</button></div>
 <p id="say" role="status"></p>
 <script type="module" src="page.js"></script>
 </body>

@@ -4,8 +4,9 @@
    on both sides. The host puts moves in order; the order is a signed chain, so
    it cannot be rewritten later. The seed of the match is made from a secret of
    each player, revealed only after both have committed to theirs, so neither
-   can choose it. */
-import { canonical } from '../../kit/engine.js';
+   can choose it. Before that the host states the rules of the match (board, difficulty,
+   number of games) and the other player accepts them or leaves. */
+import { canonical, cleanTerms } from '../../kit/engine.js';
 
 const enc = new TextEncoder();
 const hex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -28,21 +29,23 @@ async function verified(pub, sig, value) {
 }
 const signedMove = (match, player, n, move) => ({ match, player, n, move });
 const signedEntry = (e) => ({ seq: e.seq, prev: e.prev, player: e.player, n: e.n, move: e.move, sig: e.sig, fingerprint: e.fingerprint });
-const MAX_WAITING = 128, MAX_ENTRIES = 2000, MAX_PROPOSALS_PER_SECOND = 40, HANDSHAKE_MS = 15000;
+const MAX_WAITING = 128, MAX_ENTRIES = 2000, MAX_PROPOSALS_PER_SECOND = 40, HANDSHAKE_MS = 15000, TERMS_MS = 120000;
 
 /* table: what the game's page gives us
-     start({ seed, me, players }) -> fingerprint
+     start({ seed, me, players, terms, sound }) -> fingerprint
      tryMove(player, move)        -> { ok, error, result, fingerprint }
      refused(error)
-   on: { opponent, started, entry, over, failed } */
+   on: { opponent, terms, started, entry, ended, over, failed }
+   `on.terms` is asked on the guest's side and answers true or false. */
 export class Session {
   #wire; #table; #on; #identity; #host; #game;
   #me; #them; #name; #secret; #commit; #match; #head; #seq = 0; #sentN = 0; #seenN = [0, 0];
   #queue = Promise.resolve(); #inbox = Promise.resolve(); #waiting = 0; #closed = false; #over = false; #log = [];
-  #sending = Promise.resolve(); #handshakeMs; #timer = null; #rate = { second: 0, used: 0 };
+  #sending = Promise.resolve(); #handshakeMs; #termsMs; #terms = null; #ticket; #sound; #accepted = false; #reviewing = false; #timer = null; #rate = { second: 0, used: 0 };
 
-  constructor({ wire, table, identity, host, game, name, on, handshakeMs = HANDSHAKE_MS }) {
-    this.#handshakeMs = handshakeMs;
+  constructor({ wire, table, identity, host, game, name, on, terms = {}, ticket = null, sound = true, handshakeMs = HANDSHAKE_MS, termsMs = TERMS_MS }) {
+    this.#handshakeMs = handshakeMs; this.#termsMs = termsMs; this.#ticket = ticket; this.#sound = sound;
+    if (host) this.#terms = cleanTerms(game.options ?? [], { ...terms, ticket });
     this.#wire = wire; this.#table = table; this.#identity = identity; this.#host = host;
     this.#game = game; this.#name = cleanName(name); this.#on = on;
     this.#me = host ? 0 : 1;
@@ -52,7 +55,7 @@ export class Session {
   open() {
     this.#inbox = this.#inbox.then(() => this.#greet()).catch(() => this.#fail('The match could not start.'));
     const greeted = this.#inbox;
-    this.#timer = setTimeout(() => this.#fail('The other computer did not start the match.'), this.#handshakeMs);
+    this.#wait(this.#handshakeMs, 'The other computer did not start the match.');
     const wire = this.#wire;                // listening starts here: their greeting may already be waiting
     wire.onMessage = (msg) => {
       if (this.#closed) return;
@@ -60,14 +63,20 @@ export class Session {
       this.#inbox = this.#inbox.then(() => this.#receive(msg)).catch(() => this.#fail('The other computer sent something this app does not understand.'))
         .finally(() => { this.#waiting--; });
     };
-    wire.onClose = () => this.#fail('The connection was lost.');
+    // What arrived before the line closed still counts, unless this player is being asked something.
+    wire.onClose = () => {
+      const lost = () => this.#fail('The connection was lost.');
+      if (this.#reviewing) lost(); else this.#inbox = this.#inbox.then(lost);
+    };
     return greeted;
   }
+
+  #wait(ms, reason) { clearTimeout(this.#timer); this.#timer = setTimeout(() => this.#fail(reason), ms); }
 
   async #greet() {
     this.#secret = hex(crypto.getRandomValues(new Uint8Array(32)));
     this.#commit = await sha256(this.#secret);
-    this.#wire.send({ t: 'hello', pub: this.#identity.pub, name: this.#name, game: this.#game.id, hash: this.#game.hash, commit: this.#commit });
+    this.#wire.send({ t: 'hello', pub: this.#identity.pub, name: this.#name, game: this.#game.id, hash: this.#game.hash, commit: this.#commit, ...(this.#host ? { terms: this.#terms } : {}) });
   }
 
   /* The page wants to play a move. */
@@ -92,13 +101,15 @@ export class Session {
 
   /* Everything a referee needs to play the match again. */
   transcript() {
-    return { game: this.#game.id, hash: this.#game.hash, match: this.#match, seed: this.seed,
+    return { game: this.#game.id, hash: this.#game.hash, match: this.#match, seed: this.seed, terms: this.#terms,
       players: this.players?.map((p) => ({ pub: p.pub, name: p.name })), entries: this.#log.slice() };
   }
 
   async #receive(msg) {
     if (this.#closed) return;
     if (msg?.t === 'hello') return this.#hello(msg);
+    if (msg?.t === 'accept' && this.#host && this.#them && !this.#accepted) return this.#agreed();
+    if (msg?.t === 'decline' && this.#host && !this.#match) return this.#fail('The other player did not accept the rules.');
     if (msg?.t === 'reveal') return this.#reveal(msg);
     if (msg?.t === 'propose' && this.#host && this.#match) return this.#proposed(msg);
     if (msg?.t === 'entry' && !this.#host && this.#match) return this.#entry(msg.entry);
@@ -114,11 +125,34 @@ export class Session {
     if (msg.game !== this.#game.id || msg.hash !== this.#game.hash) return this.#fail('The other player has a different version of this game.');
     this.#them = { pub: msg.pub, name: cleanName(msg.name), commit: msg.commit };
     this.#on.opponent?.({ name: this.#them.name, tag: msg.pub.slice(0, 4) });
+    if (this.#host) return this.#wait(this.#termsMs, 'The other player did not answer.');
+    return this.#review(msg.terms);
+  }
+
+  /* Guest only: the host's rules, for the player to accept. Nothing about the board is known yet. */
+  async #review(offered) {
+    let terms;
+    try { terms = cleanTerms(this.#game.options ?? [], offered); } catch { return this.#fail('The other computer offered rules this game does not have.'); }
+    if (terms.ticket !== this.#ticket) return this.#fail('The other computer sent a bad greeting.');
+    this.#wait(this.#termsMs, 'You did not answer in time.');
+    this.#reviewing = true;
+    const isAgreed = this.#on.terms ? await this.#on.terms({ terms, name: this.#them.name }) : true;
+    this.#reviewing = false;
+    if (this.#closed) return undefined;
+    if (!isAgreed) { this.#wire.send({ t: 'decline' }); this.close(); return undefined; }
+    this.#terms = terms;
+    this.#wire.send({ t: 'accept' });
+    return this.#agreed();
+  }
+
+  #agreed() {
+    this.#accepted = true;
+    this.#wait(this.#handshakeMs, 'The other computer did not start the match.');
     this.#wire.send({ t: 'reveal', secret: this.#secret });
   }
 
   async #reveal(msg) {
-    if (!this.#them || this.#match || !isHex(msg.secret, 64) || (await sha256(msg.secret)) !== this.#them.commit) {
+    if (!this.#them || !this.#accepted || this.#match || !isHex(msg.secret, 64) || (await sha256(msg.secret)) !== this.#them.commit) {
       return this.#fail('The other computer did not keep its word about the start of the match.');
     }
     const mine = { pub: this.#identity.pub, name: this.#name, secret: this.#secret };
@@ -126,14 +160,14 @@ export class Session {
     const pair = this.#host ? [mine, theirs] : [theirs, mine];
     this.seed = await sha256(`seed|${pair[0].secret}|${pair[1].secret}`);
     this.players = pair.map(({ pub, name }) => ({ pub, name }));
-    const match = await sha256(canonical({ game: this.#game.id, hash: this.#game.hash, seed: this.seed, players: pair.map((p) => p.pub) }));
+    const match = await sha256(canonical({ game: this.#game.id, hash: this.#game.hash, seed: this.seed, terms: this.#terms, players: this.players }));
     if (this.#closed) return undefined;
-    const fingerprint = await this.#table.start({ seed: this.seed, me: this.#me, players: pair.map((p) => ({ name: p.name })) });
+    const fingerprint = await this.#table.start({ seed: this.seed, me: this.#me, players: pair.map((p) => ({ name: p.name })), terms: this.#terms, sound: this.#sound });
     if (this.#closed) return undefined;
     this.#head = await sha256(`${match}|${fingerprint}`);
     this.#match = match;
     clearTimeout(this.#timer);
-    this.#on.started?.({ me: this.#me, players: this.players });
+    this.#on.started?.({ me: this.#me, players: this.players, terms: this.#terms });
     return undefined;
   }
 
@@ -190,6 +224,7 @@ export class Session {
     this.#log.push(entry);
     if (this.#log.length >= MAX_ENTRIES && !out.result) return this.#fail('The match is too long.');
     this.#on.entry?.(entry);
+    if (out.score) this.#on.ended?.({ score: out.score });
     if (!out.result) return undefined;
     this.#over = true;
     this.#on.over?.({ result: out.result, me: this.#me, transcript: this.transcript() });
@@ -207,9 +242,9 @@ export class Session {
 export async function verifyTranscript(t, createMatch) {
   const bad = (reason) => ({ ok: false, reason });
   if (t?.players?.length !== 2 || !Array.isArray(t.entries)) return bad('not a transcript');
-  const id = await sha256(canonical({ game: t.game, hash: t.hash, seed: t.seed, players: t.players.map((p) => p.pub) }));
+  const id = await sha256(canonical({ game: t.game, hash: t.hash, seed: t.seed, terms: t.terms, players: t.players.map(({ pub, name }) => ({ pub, name })) }));
   if (id !== t.match) return bad('the match does not belong to these players');
-  const match = createMatch(t.seed);
+  const match = createMatch(t.seed, t.terms);
   let head = await sha256(`${t.match}|${match.fingerprint()}`);
   const seen = [0, 0];
   let result = null;
@@ -223,5 +258,5 @@ export async function verifyTranscript(t, createMatch) {
     head = await sha256(canonical(signedEntry(e)));
     result = out.result;
   }
-  return result ? { ok: true, result } : bad('the match is not finished');
+  return result ? { ok: true, result } : { ...bad('the match is not finished'), unfinished: true };
 }

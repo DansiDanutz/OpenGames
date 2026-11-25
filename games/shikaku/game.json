@@ -1,13 +1,63 @@
 {
   "id": "shikaku",
   "name": "Shikaku",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": "DansiDanutz",
   "license": "MIT",
   "summary": "Split the grid into rectangles. Each holds one number: its size. First to finish wins.",
-  "players": { "min": 2, "max": 2 },
+  "players": {
+    "min": 2,
+    "max": 2
+  },
   "minutes": 3,
   "page": "index.html",
   "icon": "icon.svg",
-  "rules": "rules.js"
+  "rules": "rules.js",
+  "options": [
+    {
+      "id": "size",
+      "label": "Board",
+      "default": "6",
+      "choices": [
+        {
+          "id": "5",
+          "label": "5 × 5"
+        },
+        {
+          "id": "6",
+          "label": "6 × 6"
+        },
+        {
+          "id": "8",
+          "label": "8 × 8"
+        },
+        {
+          "id": "10",
+          "label": "10 × 10"
+        }
+      ]
+    },
+    {
+      "id": "level",
+      "label": "Difficulty",
+      "default": "easy",
+      "choices": [
+        {
+          "id": "easy",
+          "label": "Easy",
+          "note": "Smaller blocks. A wrong block is marked."
+        },
+        {
+          "id": "hard",
+          "label": "Hard",
+          "note": "Bigger blocks. Nothing tells you that a block is wrong."
+        }
+      ]
+    }
+  ],
+  "howto": [
+    "Split the whole board into rectangles.",
+    "Each rectangle holds exactly one number, and that number is its size.",
+    "Both players solve the same board. The first to finish wins."
+  ]
 }

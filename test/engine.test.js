@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Match, canonical, createRandom, fingerprint } from '../kit/engine.js';
 import * as shikaku from '../games/shikaku/rules.js';
-import { checkGame, playMatch } from '../kit/check.js';
+import { checkGame } from '../kit/check.js';
+import { playMatch } from '../kit/check-run.js';
 
 const SEED = '0123456789abcdef'.repeat(4);
 test('the same seed always gives the same board, and another seed another board', () => {
@@ -51,7 +52,7 @@ test('rules cannot change the state a page was given', () => {
   assert.equal(m.fingerprint(), before);
 });
 test('Shikaku passes the automatic check', async () => {
-  assert.equal((await checkGame(new URL('../games/shikaku', import.meta.url).pathname)).matches, 20);
+  assert.equal((await checkGame(new URL('../games/shikaku', import.meta.url).pathname)).matches, 48);
 });
 test('the check refuses rules that differ between computers, and games nobody can finish', () => {
   let n = 0;

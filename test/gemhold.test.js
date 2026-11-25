@@ -5,14 +5,15 @@ import { checkGame } from '../kit/check.js';
 import * as gemhold from '../games/gemhold/rules.js';
 
 const SEED = '0123456789abcdef'.repeat(4);
-const fresh = (seed = SEED) => new Match(gemhold, { seed, players: 2 });
+const OPTIONS = { size: '7', level: 'easy' };
+const fresh = (seed = SEED, options = OPTIONS) => new Match(gemhold, { seed, players: 2, options });
 const rect = (r0, c0, r1 = r0, c1 = c0) => ({ r0, c0, r1, c1 });
 const place = (...at) => ({ type: 'place', rect: rect(...at) });
-const N = gemhold.SIZE, END = N - 1;
+const N = 7, END = N - 1;
 
 test('Gemhold fields are the same from both corners and every colour is there', () => {
   for (let i = 0; i < 100; i++) {
-    const { gems } = gemhold.setup({ random: createRandom(i.toString(16).padStart(32, '0')) });
+    const { gems } = gemhold.setup({ random: createRandom(i.toString(16).padStart(32, '0')), options: OPTIONS });
     assert.deepEqual(gems, [...gems].reverse());
     assert.equal(gems.length, N * N);
     for (const kind of gemhold.GEMS) assert.ok(gems.filter((g) => g === kind).length >= 4);
@@ -23,7 +24,7 @@ test('a player starts in their own corner', () => {
   const m = fresh();
   assert.match(m.play(0, place(3, 3)).error, /corner/);
   assert.match(m.play(0, place(END, END)).error, /corner/);
-  assert.match(m.play(0, place(0, 0, 1, 1)).error, /at most two/);
+  assert.match(m.play(0, place(0, 0, 1, 1)).error, /at most 2/);
   assert.ok(m.play(0, place(0, 0, 1, 0)).ok);
   assert.match(m.play(1, place(0, 2)).error, /corner/);
   assert.ok(m.play(1, place(END - 1, END - 1, END, END)).ok);
@@ -48,7 +49,7 @@ test('each block can only be used as often as the player has it, in either direc
   assert.ok(m.play(0, place(1, 0, 2, 2)).ok); m.play(1, place(END - 1, END));
   assert.match(m.play(0, place(3, 0, 5, 1)).error, /no more/);
   assert.equal(m.view(0).stock[0]['2x3'], 0);
-  assert.equal(m.view(0).stock[1]['1x1'], gemhold.STOCK['1x1'] - 2);
+  assert.equal(m.view(0).stock[1]['1x1'], gemhold.BOARDS[7].stock['1x1'] - 2);
 });
 test('moves that are not rectangles on the field are refused and change nothing', () => {
   const m = fresh(), before = m.fingerprint();
@@ -78,18 +79,35 @@ test('the match ends when nobody can place a block, and then one player has won'
       assert.ok(m.play(turn, gemhold.bot(m.view(turn), turn, chance)).ok);
       assert.ok(++moves < 60);
     }
-    const v = m.view(0), { crowns, total } = gemhold.score(v), w = m.result().winner;
+    const v = m.view(0), { crowns, total } = gemhold.score(v), w = m.result().winner, ground = [0, 1].map((p) => v.owner.filter((o) => o === p).length);
     assert.ok([0, 1].every((p) => gemhold.choices(v, p).length === 0));
-    assert.ok(crowns[w] > crowns[1 - w] || (crowns[w] === crowns[1 - w] && (total[w] > total[1 - w] || (total[w] === total[1 - w] && w === 1))));
+    assert.ok(crowns[w] > crowns[1 - w] || (crowns[w] === crowns[1 - w] && (total[w] > total[1 - w] || (total[w] === total[1 - w] && (ground[w] > ground[1 - w] || (ground[w] === ground[1 - w] && w === 1))))));
   }
 });
 test('a player who cannot move is skipped', () => {
-  const s = gemhold.setup({ random: createRandom('1'.repeat(32)) });
+  const s = gemhold.setup({ random: createRandom('1'.repeat(32)), options: OPTIONS });
   const owner = s.owner.map((_, i) => (i === 0 ? 0 : i === 1 || i === N ? 1 : -1));
   const next = gemhold.move({ ...s, owner, turn: 1 }, 1, place(0, 2));
   assert.equal(gemhold.choices(next, 0).length, 0);
   assert.equal(next.turn, 1);
 });
+test('every board is fair on paper: the same from both corners, with rocks only on a hard one', () => {
+  for (const size of Object.keys(gemhold.BOARDS)) for (const level of ['easy', 'hard']) for (let i = 0; i < 20; i++) {
+    const { n, owner, gems } = gemhold.setup({ random: createRandom(i.toString(16).padStart(32, '0')), options: { size, level } });
+    const rocks = owner.filter((o) => o === gemhold.ROCK).length;
+    assert.equal(n, Number(size));
+    assert.deepEqual(owner.map((o) => o === gemhold.ROCK), owner.map((o) => o === gemhold.ROCK).reverse());
+    assert.equal(rocks, level === 'hard' ? 2 * gemhold.BOARDS[size].rocks : 0);
+    assert.ok(owner.every((o, k) => o !== gemhold.ROCK || gems[k] === 0));
+    assert.equal(owner[0], -1);
+  }
+});
+test('no block covers a rock, and nobody owns a rock', () => {
+  const m = fresh(SEED, { size: '7', level: 'hard' }), v = m.view(0), i = v.owner.indexOf(gemhold.ROCK);
+  const at = { r0: Math.floor(i / 7), c0: i % 7, r1: Math.floor(i / 7), c1: i % 7 };
+  assert.equal(gemhold.problem(v, 0, at), 'a rock is in the way');
+  assert.deepEqual(gemhold.score(v).total, [0, 0]);
+});
 test('Gemhold passes the automatic check', async () => {
-  assert.equal((await checkGame(new URL('../games/gemhold', import.meta.url).pathname)).matches, 20);
+  assert.equal((await checkGame(new URL('../games/gemhold', import.meta.url).pathname)).matches, 48);
 });
