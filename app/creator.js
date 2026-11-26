@@ -4,7 +4,10 @@
 export const CREATOR_FILE = 'creator.json';
 /* Pages where somebody can be supported, and what comes after the host. */
 const SUPPORT = { 'github.com': /^\/sponsors\/[\w-]{1,39}$/, 'ko-fi.com': /^\/\w{1,60}$/, 'buymeacoffee.com': /^\/[\w.-]{1,60}$/, 'www.patreon.com': /^\/[\w-]{1,60}$/,
-  'liberapay.com': /^\/[\w.-]{1,60}$/, 'opencollective.com': /^\/[\w-]{1,60}$/ };
+  'liberapay.com': /^\/[\w.-]{1,60}$/, 'opencollective.com': /^\/[\w-]{1,60}$/,
+  'nervixpay.live': /^\/l\/[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/ };
+/* What a player should know before they open the page, for the places where it is not an ordinary payment. */
+const NOTES = { 'nervixpay.live': 'Payment there is in crypto, on NervixPay. Ask an adult first.' };
 const MAX_URL = 200, MAX_BYTES = 2048, KEYS = ['support', 'sponsor'], SPONSOR_KEYS = ['name', 'text', 'url'];
 
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -30,5 +33,6 @@ export function readCreator(data) {
   }
   const s = c.sponsor;
   if (s !== undefined && !(isObject(s) && onlyHas(s, SPONSOR_KEYS) && isLine(s.name, 40) && isLine(s.text, 80) && webAddress(s.url))) throw new Error('sponsor must have a name, one line of text and an https address');
-  return { support: c.support ? new URL(c.support).href : null, sponsor: s ? { name: s.name, text: s.text, url: new URL(s.url).href } : null };
+  const support = c.support ? new URL(c.support) : null, note = support && NOTES[support.hostname];
+  return { support: support?.href ?? null, sponsor: s ? { name: s.name, text: s.text, url: new URL(s.url).href } : null, ...(note && { supportNote: note }) };
 }

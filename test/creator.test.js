@@ -22,8 +22,14 @@ test('pages where somebody can be supported are allowed', () => {
   for (const url of ['https://github.com/sponsors/some-one', 'https://ko-fi.com/some_one', 'https://buymeacoffee.com/a.b', 'https://www.patreon.com/a', 'https://liberapay.com/a', 'https://opencollective.com/a-b']) assert.equal(read({ support: url }).support, url);
   assert.deepEqual(read({ sponsor }).sponsor, sponsor);
 });
+test('a NervixPay payment link is allowed, and comes with a note that it is crypto', () => {
+  const url = 'https://nervixpay.live/l/123e4567-e89b-42d3-a456-426614174000';
+  assert.deepEqual(read({ support: url }), { support: url, sponsor: null, supportNote: 'Payment there is in crypto, on NervixPay. Ask an adult first.' });
+  assert.equal('supportNote' in read({ support: 'https://ko-fi.com/a' }), false);
+});
 test('every other address is refused', () => {
-  const bad = ['http://ko-fi.com/a', 'https://evil.example/a', 'https://github.com/a/b', 'https://github.com/sponsors/a/../../x', 'https://ko-fi.com/a?x=1', 'https://ko-fi.com/a#x', 'https://ko-fi.com.evil.example/a',
+  const bad = ['https://nervixpay.live/', 'https://nervixpay.live/l/abc', 'https://nervixpay.live/pay/123e4567-e89b-42d3-a456-426614174000', 'https://nervixpay.live/l/123e4567-e89b-42d3-a456-426614174000?x=1',
+    'https://nervixpay.live.evil.example/l/123e4567-e89b-42d3-a456-426614174000', 'http://ko-fi.com/a', 'https://evil.example/a', 'https://github.com/a/b', 'https://github.com/sponsors/a/../../x', 'https://ko-fi.com/a?x=1', 'https://ko-fi.com/a#x', 'https://ko-fi.com.evil.example/a',
     'https://ko-fi.com@evil.example/a', 'https://ko-fi.com:8443/a', 'javascript:alert(1)', 'file:///etc/hosts', 'https://KO-FI.com\\@evil.example', 'https://ko-fi.com/', 5, null, ['https://ko-fi.com/a']];
   for (const support of bad) assert.throws(() => read({ support }), /support must/, String(support));
   const urls = ['http://a.example', 'https://127.0.0.1/', 'https://[::1]/', 'https://localhost/', 'https://u:p@a.example/', 'https://a.example:81/', 'https://xn--pple-43d.com/', 'https://\u0430pple.com/', 'ms-settings:x', `https://a.example/${'x'.repeat(200)}`, 'https://a.example/ x', null];
