@@ -6,8 +6,10 @@ description: Set where players can support a creator, add one sponsor line to th
 
 OpenGames takes nothing and never handles money. Payments happen on the creator's own pages, under the creator's own name and taxes. Do not promise an income.
 
-1. Support: ask for the creator's own page at GitHub Sponsors, Ko-fi, Buy Me a Coffee, Patreon, Liberapay or Open Collective. They open it themselves; never make an account or fill in payment details for them.
-2. Sponsor, only when the creator has an agreement with one: the sponsor's name, one line of text and an https page. Refuse gambling, betting, crypto, adult content, alcohol, tobacco, loans, politics and anything that asks children for money.
+1. Support: ask for the creator's own page at GitHub Sponsors, Ko-fi, Buy Me a Coffee, Patreon, Liberapay or Open Collective, or a NervixPay payment link. They open it themselves; never make an account or fill in payment details for them.
+   - NervixPay is one choice among these, never the default. Before they pick it, say all of this: it takes crypto only; its terms require an adult (18 or over) using it for a business or professional activity; a link has fixed prices; it charges 0.2% of each payment, at most 2 USD, from fee credits they top up; confirmed payments are listed publicly on its PayScan page; the maintainers of OpenGames own NervixPay and earn that fee. Terms: https://nervixpay.live/docs/legal/terms
+   - Its address is `https://nervixpay.live/l/<link id>`. Players are told it is paid in crypto.
+2. Sponsor, only when the creator has an agreement with one: the sponsor's name, one line of text and an https page. Refuse gambling, betting, crypto (this is about sponsors; a creator's own NervixPay support link is allowed), adult content, alcohol, tobacco, loans, politics and anything that asks children for money.
 3. Write `games/<id>/creator.json`. Leave out what they do not have:
    ```json
    { "support": "https://ko-fi.com/name", "sponsor": { "name": "Shop", "text": "One line", "url": "https://example.com/" } }

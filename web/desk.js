@@ -77,7 +77,7 @@ globalThis.desk = {
   async openLink(id, kind) {
     const game = find(id), url = kind === 'support' ? game.support : game.sponsor?.url;
     if (!url) throw new Error('unknown link');
-    if (confirm(`Open ${new URL(url).hostname}?\n\n${url}\n\nThis page does not belong to OpenGames.`)) open(url, '_blank', 'noopener,noreferrer');
+    if (confirm(`Open ${new URL(url).hostname}?\n\n${url}\n\nThis page does not belong to OpenGames.${kind === 'support' && game.supportNote ? ` ${game.supportNote}` : ''}`)) open(url, '_blank', 'noopener,noreferrer');
   },
   async invite(id, code, how, says) {
     const text = inviteText({ game: find(id), code, server: location.origin, ...says });

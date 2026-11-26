@@ -138,6 +138,10 @@ test('support and sponsor links say what they are', () => {
   assert.match(body, /rel="noopener noreferrer nofollow sponsored"/);
   assert.match(body, /Sponsor, paid to the creator/);
 });
+test('a note about how to pay stands beside the support link', () => {
+  const noted = { ...evil, support: 'https://nervixpay.live/l/123e4567-e89b-42d3-a456-426614174000', supportNote: 'In <crypto>.' };
+  assert.match(bodyOf(createSite({ games: [noted] }), `/games/${noted.id}`), /In &#60;crypto&#62;\./);
+});
 test('without statistics the pages still work', () => {
   assert.match(bodyOf(createSite({ games }), '/creators/DansiDanutz'), /does not count matches/);
 });

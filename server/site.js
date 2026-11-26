@@ -65,7 +65,7 @@ const home = (games) => page('OpenGames', 'Open-source games for two players, wh
 
 const gamePage = (g) => page(`${g.name} on OpenGames`, g.summary, `<div class="title">${icon(g, 120)}<div><h1>${escape(g.name)}</h1><p>by <a href="${escape(creatorUrl(g.author))}">${escape(g.author)}</a></p></div></div><p class="lead">${escape(g.summary)}</p>
 <h2>How to play</h2><ul>${g.howto.map((x) => `<li>${escape(x)}</li>`).join('')}</ul><p class="soft">Two players, about ${g.minutes} minutes. Version ${escape(g.version)}, licence ${escape(g.license)}.</p>
-<p><a class="go" href="/play">Play now</a></p>${g.support ? `<h2>Support the creator</h2><p>${out(g.support, g.support.replace('https://', ''))}</p><p class="soft">This goes to the creator on their own page. OpenGames takes nothing.</p>` : ''}
+<p><a class="go" href="/play">Play now</a></p>${g.support ? `<h2>Support the creator</h2><p>${out(g.support, g.support.replace('https://', ''))}</p><p class="soft">This goes to the creator on their own page. OpenGames takes nothing.${g.supportNote ? ` ${escape(g.supportNote)}` : ''}</p>` : ''}
 ${g.sponsor ? `<aside><small>Sponsor, paid to the creator</small><p><b>${escape(g.sponsor.name)}</b> ${escape(g.sponsor.text)}</p><p>${out(g.sponsor.url, new URL(g.sponsor.url).hostname, ' sponsored')}</p></aside>` : ''}`);
 
 const creators = (games) => page('Creators on OpenGames', 'Make a game, keep everything it earns.', `<h1>Make a game. Keep what it earns.</h1><p class="lead">You need GitHub and an AI coding tool, no account with us. OpenGames takes 0% and never touches your money.</p>${STAR}${STEPS}${ROOM}
